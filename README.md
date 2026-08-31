@@ -4,6 +4,30 @@ Free, privacy-first bus route companion for Belgium. BusApp lets a driver create
 
 Production: [busapp.wexio.be](https://busapp.wexio.be)
 
+## Current status
+
+Audited against production on 2026-08-31.
+
+| Area | State |
+|---|---|
+| Public site | Live, five pages, complete in NL and FR |
+| Accounts, buses, stops, passengers | Live |
+| Parent access by code | Live, anonymous session, no parent email |
+| Profiles and private photos | Live |
+| Trips, attendance, bus GPS | Live |
+| Map basemap | Live: MapLibre + OpenFreeMap, no API key |
+| Road routing | **Not activated.** `ROUTING_PROVIDER` is unset, so routing runs on the local heuristic and every distance and duration is shown as an estimate |
+| Search engine indexing | Disabled (`robots: noindex` in `app/index.html`) |
+
+Verified in production: 26 `bus_app_*` tables, row level security enabled on all of them,
+no `INSERT`/`UPDATE`/`DELETE` granted to `anon` or `authenticated` on any of them, and only
+three tables readable by a browser at all — `bus_app_parent_trip_updates`,
+`bus_app_notifications` and `bus_app_avatar_updates`, each restricted to `user_id = auth.uid()`.
+The media bucket is private, capped at 5 MiB and limited to `image/webp`.
+
+Because road routing is not activated, the product deliberately does not claim exact routes,
+live traffic or navigation anywhere in its interface. A test enforces that.
+
 ## Public introduction & guide
 
 Visiting BusApp without an account opens a small public site that explains the product
@@ -51,11 +75,17 @@ to publish it to search engines; the SEO and Open Graph metadata is already in p
 This repository contains BusApp only:
 
 ```text
-app/                         React/Vite PWA
-supabase/functions/bus-app/  Dedicated Edge Function
-supabase/migrations/         BusApp database/RLS migrations
-docs/                        Product and security audits
-tests/                       Static security and product contracts
+app/                               React/Vite PWA
+app/public/media/guide/            Approved product screenshots
+app/public/media/hero/             Generated hero images
+app/public/brand/                  Source logo and hero, plus the generated wordmark
+app/public/docs/                   Public PDF guide
+supabase/functions/bus-app/        Domain Edge Function
+supabase/functions/bus-app-media/  Isolated image upload/sanitising function
+supabase/migrations/               BusApp database/RLS migrations
+scripts/                           Asset generation and deploy helpers
+docs/                              Product and security audits
+tests/                             Static security and product contracts
 ```
 
 It intentionally excludes SBCOS, NAVI/Luna, other Wexio products, tenant data, production dumps and deployment credentials. The Edge Function relies on Supabase Auth and the Supabase platform-provided URL, anonymous key and service-role key. Those values are never committed.
@@ -119,14 +149,21 @@ No simulated grid or invented route polyline is rendered. If road geometry is un
 Relevant Edge Function variables:
 
 ```text
-ROUTING_PROVIDER=local|osrm|vroom
+ROUTING_PROVIDER=local|openrouteservice|osrm|vroom
+OPENROUTESERVICE_API_KEY=            # server-side only, never in the browser bundle
+OPENROUTESERVICE_BASE_URL=           # defaults to https://api.heigit.org
+OPENROUTESERVICE_PROFILE=            # defaults to driving-car
+OPENROUTESERVICE_MAX_WAYPOINTS=      # defaults to the published limit of 50
 OSRM_BASE_URL=
 VROOM_BASE_URL=
-GEOCODING_PROVIDER=nominatim|mapbox
+GEOCODING_PROVIDER=nominatim|openrouteservice|mapbox
+GEOCODING_COUNTRIES=                 # defaults to BE,FR
 NOMINATIM_BASE_URL=
-MAPBOX_ACCESS_TOKEN=
 BUS_APP_GEOCODING_CONTACT=
 ```
+
+Nothing above is required to run BusApp: with no routing variables set the provider
+resolves to `local` and every distance and duration is labelled as an estimate.
 
 ## Privacy model
 
@@ -136,6 +173,12 @@ BUS_APP_GEOCODING_CONTACT=
 - A parent response is filtered to explicitly granted passenger IDs and their stop IDs.
 - Parent bus coordinates are rounded and contain no passenger or child location.
 - Live trip data expires and is cleared after terminal trip states.
+- An external routing provider receives coordinates and an ephemeral positional index only.
+  No passenger, parent, Bus Space or user identifier ever leaves the server, and a test
+  asserts this against the outgoing request body.
+- Route calculation requires the `MANAGE_ROUTE` Bus Space permission, and address search is
+  closed to anonymous parent devices, so a parent cannot spend the shared provider quota.
+- Provider call metering lives in its own expiring table, not in the durable audit log.
 - Service-role credentials remain server-side.
 
 ## Identities: person, bus and passenger
@@ -175,6 +218,30 @@ BusApp has one canonical profile per authenticated user and one canonical avatar
 The visible NL/FR profile switch controls the current interface immediately and persists to both the browser and the canonical user profile. This is deliberately separate from the Bus Space default language, which controls operational bus notifications.
 
 Photos are uploaded only to the isolated `bus-app-media` function. It verifies authorization and the real file signature, limits input to 5 MiB, rejects active/vector/document formats, removes metadata and re-encodes a square profile/passenger image or 4:3 bus image as WebP. Originals are never stored. The private bucket is served through short-lived signed thumbnail URLs with a built-in/initials fallback.
+
+## Brand assets
+
+Every icon and hero image is generated from a single source file, so the brand cannot drift
+apart. Both scripts use the already-pinned `@imagemagick/magick-wasm` dependency, so no extra
+image toolchain is needed.
+
+```bash
+node scripts/generate-brand-icons.mjs   # from app/public/brand/buslogo-source.png
+node scripts/generate-hero-images.mjs   # from app/public/brand/herobus-source.png
+```
+
+The icon script produces the PWA icons, the Apple touch icon, two favicon sizes and the
+in-app wordmark. Maskable and Apple icons are flattened onto the brand blue with the artwork
+inset to the 80% safe zone, so a circular or squircle mask cannot clip the bus or expose
+transparent corners. Every icon is padded to an exact square, because a manifest that
+declares 192x192 must actually receive that size.
+
+The hero script art-directs rather than merely scaling: phones get a 3:2 crop centred on the
+bus, tablet and desktop get the full 1916x821 banner, each at three widths in WebP.
+
+A test asserts every precached service-worker asset exists. Renaming a brand file without
+updating the shell list would make `cache.addAll()` reject as a whole and leave installed
+apps with no service worker.
 
 ## Local development
 
@@ -216,7 +283,21 @@ npm run build
 npm test
 ```
 
-The build blocks emoji product glyphs and simulated-map runtime classes. Tests cover TypeScript, RLS/security contracts, honest map states, PWA assets, NL/FR, mobile widths from 320 to 430 px, tablet at 768 px, landscape, 200% text sizing and horizontal overflow.
+The build blocks emoji product glyphs and simulated-map runtime classes.
+
+- **42 contract tests** (`npm run test:contracts`) read the migrations, Edge functions and
+  UI source directly and assert the invariants that matter: RLS and browser grants, parent
+  payload filtering, the canonical passenger avatar, image sanitising, the routing provider
+  abstraction and geometry integrity, the icon and service-worker shell, and that no
+  provider secret appears in any built bundle.
+- **46 browser tests** (`npm run test:responsive`) cover both languages at 320-430 px, tablet
+  at 768 and 820 px, landscape, 200% text sizing, horizontal overflow, the public pages and
+  their deep links, hero art direction, and that the public site never fetches the map chunk.
+
+A production smoke run (`node app/scripts/production-smoke.mjs`, with `SUPABASE_URL`,
+`SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SECRET_KEY`) exercises the live system end to end
+with temporary users and data that it removes afterwards. It also asserts the deployed
+Content-Security-Policy still allows the map, which a preview server cannot catch.
 
 A read-only maintenance report is available for profiles whose display name looks like it was seeded from a bus name by the earlier fallback. It never writes; affected users can simply edit their own profile.
 
@@ -236,13 +317,17 @@ Link the intended Supabase project, inspect migration ordering, then deploy only
 
 ```bash
 npx supabase migration list
-npx supabase db push --dry-run
+npx supabase db push --dry-run          # read this: db push applies EVERY pending migration
 npx supabase db push
-node scripts/fetch-magick-wasm.mjs
+node scripts/fetch-magick-wasm.mjs      # restores the ~14 MB WASM the media function needs
 npx supabase functions deploy bus-app
 npx supabase functions deploy bus-app-media
 npm run build
 ```
+
+`db push` applies every pending migration in the linked project, not only BusApp's. If the
+project also hosts other products, check the dry run and apply the BusApp migrations
+individually rather than pushing the whole backlog.
 
 `supabase/functions/bus-app-media/magick.wasm` is a ~14 MB build artifact extracted from the pinned `@imagemagick/magick-wasm` dependency. It is deliberately not committed; `scripts/fetch-magick-wasm.mjs` copies it from `node_modules` so the deployed bundle cannot lose the binary during dependency graph rewriting.
 

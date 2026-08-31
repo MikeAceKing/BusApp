@@ -37,6 +37,9 @@ export default function App() {
     localStorage.setItem('bus-app-locale', value);
     setLocaleState(value);
   };
+  // Keep the document language in step with the interface, so assistive technology
+  // pronounces French content as French rather than reading it with Dutch phonetics.
+  useEffect(() => { document.documentElement.lang = locale; }, [locale]);
   useEffect(() => {
     const profileLocale = context?.profile?.language;
     if (profileLocale && profileLocale !== locale) {

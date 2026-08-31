@@ -611,3 +611,16 @@ test('the hero illustration is art-directed for phone and desktop', async ({ pag
   await geometry(page);
   await page.screenshot({ path: `${artifacts}/public-hero-320.png`, fullPage: false });
 });
+
+test('the document language follows the interface language', async ({ page }) => {
+  await freshVisitor(page, 'nl');
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'nl');
+  // Switching in the UI must move the document language with it.
+  await page.getByRole('button', { name: 'FR' }).first().click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
+  // And a stored French preference must apply on first paint.
+  await freshVisitor(page, 'fr');
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
+});
