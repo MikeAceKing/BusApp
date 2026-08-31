@@ -1,0 +1,22 @@
+BusApp
+Copyright © 2026 Wexio / Michael Martin. All rights reserved.
+
+This repository is published so the source can be read, reviewed and audited. That is the
+only right it grants.
+
+No open-source licence is granted. Source availability does not give permission to copy,
+modify, redistribute, sublicense, self-host or commercially reuse this software or any part
+of it.
+
+The BusApp service may be offered free of charge to its users. That is a property of the
+service, not of the source code, and it grants no rights over this repository.
+
+The BusApp name, logo and illustrations are not covered by any grant either.
+
+Third-party dependencies remain under their own licences. Map data shown in the product
+comes from OpenStreetMap contributors via OpenFreeMap and OpenMapTiles, under their
+respective terms.
+
+This notice is a statement of intent about this repository, not legal advice.
+
+Contact: admin@wexio.be

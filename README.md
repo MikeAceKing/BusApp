@@ -17,7 +17,7 @@ Audited against production on 2026-08-31.
 | Trips, attendance, bus GPS | Live |
 | Map basemap | Live: MapLibre + OpenFreeMap, no API key |
 | Road routing | **Not activated.** `ROUTING_PROVIDER` is unset, so routing runs on the local heuristic and every distance and duration is shown as an estimate |
-| Search engine indexing | Disabled (`robots: noindex` in `app/index.html`) |
+| Search engine indexing | Enabled for the five public pages, each with its own canonical. The PDF guide is `X-Robots-Tag: noindex` |
 
 Verified in production: 26 `bus_app_*` tables, row level security enabled on all of them,
 no `INSERT`/`UPDATE`/`DELETE` granted to `anon` or `authenticated` on any of them, and only
@@ -56,8 +56,25 @@ A returning visitor who has already chosen an access route goes straight to the 
 picker, and an authenticated session — including an installed PWA — opens BusApp directly
 without passing through the public site.
 
-Note: the site currently sends `robots: noindex`. Change that meta tag in `app/index.html`
-to publish it to search engines; the SEO and Open Graph metadata is already in place.
+### Search readiness
+
+`npm run build` runs `scripts/prerender-public-pages.mjs`, which writes one HTML file per
+public page with its own title, description, canonical and Open Graph block, plus
+`sitemap.xml`. nginx resolves `/how` to `how.html` through `try_files $uri $uri.html`.
+
+BusApp's authenticated screens are client-side state at `/`, not separate URLs, so there is
+nothing app-shaped to exclude from crawling. Any unknown path is served the single-page
+shell, which canonicalises to `/` — a crawler consolidates it into the home page instead of
+indexing a duplicate.
+
+The same URL serves Dutch and French client-side, so no separate language URLs exist and
+**no `hreflang` is claimed**: `hreflang` describes alternate URLs, and inventing two
+indexable language URLs for one page would be worse than omitting it. The document language
+follows the interface language, and `og:locale` records both.
+
+The PDF guide stays publicly downloadable from `/help` but carries `X-Robots-Tag: noindex`,
+so it does not compete with that page in search results. Remove that header in the nginx
+`location /docs/` block to let it be indexed.
 
 ## Core principles
 
@@ -337,4 +354,19 @@ The migration files preserve the production baseline history. The first baseline
 
 ## License
 
-LICENSE DECISION REQUIRED. This public repository currently has no license; viewing the source does not grant reuse, modification or distribution rights.
+**No open-source license is granted for this repository.**
+
+Copyright © 2026 Wexio / Michael Martin. All rights reserved.
+
+This repository is published so the source can be read, reviewed and audited. That is the
+only right it grants. Source availability does not give permission to copy, modify,
+redistribute, sublicense, self-host or commercially reuse the software.
+
+The BusApp service may be offered free of charge to its users. That is a property of the
+service, not of the source code, and grants no rights over this repository. The BusApp name,
+logo and illustrations are likewise not covered by any grant.
+
+Third-party dependencies remain under their own licenses. Map data comes from OpenStreetMap
+contributors via OpenFreeMap and OpenMapTiles, under their respective terms.
+
+See [NOTICE](NOTICE). This is a statement of intent about this repository, not legal advice.

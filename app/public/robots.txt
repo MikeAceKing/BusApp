@@ -1,0 +1,18 @@
+# BusApp — https://busapp.wexio.be
+#
+# The public introduction is indexable. BusApp's authenticated screens are client-side
+# state at "/", not separate URLs, so there is nothing app-shaped to exclude here: any
+# unknown path is served the single-page shell, which canonicalises to "/" so a crawler
+# consolidates it into the home page instead of indexing a duplicate.
+#
+# The PDF guide is served with an X-Robots-Tag: noindex header. It stays publicly
+# downloadable from /help, but should not compete with that page in search results.
+
+User-agent: *
+Allow: /
+
+# Runtime and build artefacts carry no content worth indexing.
+Disallow: /assets/
+Disallow: /service-worker.js
+
+Sitemap: https://busapp.wexio.be/sitemap.xml

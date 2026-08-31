@@ -166,6 +166,38 @@ try {
   const style = await styleResponse.json();
   assert(style.version === 8 && style.sources, 'The OpenFreeMap style must be a valid MapLibre style.');
 
+  // Search readiness lives in nginx and the prerendered files, which a preview server
+  // cannot exercise, so it is asserted against the deployed site.
+  const publicPages = [['/', '/'], ['/how', '/how'], ['/parents', '/parents'], ['/privacy', '/privacy'], ['/help', '/help']];
+  for (const [path, expected] of publicPages) {
+    const response = await fetch(`${site}${path}`);
+    assert(response.ok, `${path} must be reachable`);
+    const html = await response.text();
+    assert(/<meta name="robots" content="index,follow"/.test(html), `${path} must be indexable`);
+    const canonical = html.match(/<link rel="canonical" href="([^"]+)"/)?.[1];
+    assert(canonical === `${site}${expected}`, `${path} canonical must be ${site}${expected}, got ${canonical}`);
+    assert(/<title>[^<]{20,}<\/title>/.test(html), `${path} must carry a real title`);
+  }
+  // An unknown path is served the app shell and must consolidate into the home page rather
+  // than be indexed as a duplicate.
+  const unknown = await fetch(`${site}/login`);
+  const unknownHtml = await unknown.text();
+  assert(unknownHtml.includes(`<link rel="canonical" href="${site}/" />`), 'an unknown path must canonicalise to the home page');
+
+  const robots = await fetch(`${site}/robots.txt`);
+  assert(robots.ok, 'robots.txt must be served');
+  const robotsBody = await robots.text();
+  assert(robotsBody.includes(`Sitemap: ${site}/sitemap.xml`), 'robots.txt must advertise the sitemap');
+  const sitemap = await fetch(`${site}/sitemap.xml`);
+  assert(sitemap.ok, 'sitemap.xml must be served');
+  const sitemapBody = await sitemap.text();
+  for (const [path] of publicPages) assert(sitemapBody.includes(`<loc>${site}${path}</loc>`), `sitemap must list ${path}`);
+
+  // The guide stays downloadable but must not compete with /help in search results.
+  const pdf = await fetch(`${site}/docs/BusApp_Registratie_Eerste_Stappen.pdf`, { method: 'HEAD' });
+  assert(pdf.ok, 'the PDF guide must stay reachable');
+  assert(String(pdf.headers.get('x-robots-tag') || '').includes('noindex'), 'the PDF must carry X-Robots-Tag: noindex');
+
   const parentBus = await request(parentToken, `/parent/bus-profile?grantId=${activated.grantId}`);
   assert(parentBus.bus?.displayName, 'Parent did not receive the assigned bus identity.');
   assert(parentBus.bus.avatar && typeof parentBus.bus.avatar.source === 'string', 'Parent bus avatar reference is missing.');
@@ -184,7 +216,7 @@ try {
   home = await request(driverToken, `/spaces/${spaceId}/home`);
   assert(home.activeTrip?.id === started.tripId, 'Active trip is not visible to staff.');
   assert(home.permissions?.manageBusProfile === true, 'Bus profile permission was not resolved for the owner.');
-  console.log(JSON.stringify({ ok: true, profileLanguage: true,privateProfilePhoto:true,space: true, stop: true, passenger: true,syncedPassengerPhoto:true, route: true, trip: true, anonymousParent: true, filteredParentPayload: true, parentBusProfile: true, busProfilePermission: true, mapCsp: true, mapStyle: true }));
+  console.log(JSON.stringify({ ok: true, profileLanguage: true,privateProfilePhoto:true,space: true, stop: true, passenger: true,syncedPassengerPhoto:true, route: true, trip: true, anonymousParent: true, filteredParentPayload: true, parentBusProfile: true, busProfilePermission: true, mapCsp: true, mapStyle: true, searchReadiness: true }));
 } finally {
   if (spaceId) await admin.from('bus_app_spaces').delete().eq('id', spaceId);
   if (parentId) await admin.auth.admin.deleteUser(parentId);
