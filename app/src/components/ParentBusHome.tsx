@@ -25,14 +25,15 @@ export function ParentBusHome({ grantId, locale, onExit, onGrantLost }: { grantI
     void load(); void loadNotifications();
     const timer = setInterval(load, 25_000);
     let channel: ReturnType<typeof supabase.channel> | null = null;
+    let disposed = false;
     void supabase.auth.getUser().then(({ data: userData }) => {
-      if (!userData.user) return;
+      if (disposed || !userData.user) return;
       channel = supabase.channel(`bus-app-parent-${userData.user.id}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bus_app_parent_trip_updates', filter: `user_id=eq.${userData.user.id}` }, () => { void load(); })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bus_app_notifications', filter: `user_id=eq.${userData.user.id}` }, () => { void loadNotifications(); })
         .subscribe();
     });
-    return () => { clearInterval(timer); if (channel) void supabase.removeChannel(channel); };
+    return () => { disposed = true; clearInterval(timer); if (channel) void supabase.removeChannel(channel); };
   }, [load, loadNotifications]);
 
   if (!data && !error) return <main className="app-shell"><StateCard icon={BusFront} title={t('loading')} /></main>;
