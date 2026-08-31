@@ -60,8 +60,10 @@ The production upgrade path is to deploy a separately monitored OSRM/VROOM servi
 - V2.1 migrations: `20260831013000_bus_app_v2_avatar_styles.sql`, `20260831054000_bus_app_profiles_and_private_avatars.sql` and
   `20260831055000_bus_app_avatar_reference_guard_fix.sql`. All three are additive; `055000` only replaces the trigger function body from `054000`.
 - Functions: `bus-app` and `bus-app-media`; `school-bus` remains active.
-- Not verified from the authoring session: whether the V2.1 migrations are applied and `bus-app-media` is deployed on production.
-  Confirm both against the live project before treating the V2.1 section below as shipped.
+- V2.2 migration: `20260831120000_bus_app_bus_profile_permission.sql`, materializing `MANAGE_BUS_PROFILE` on existing members.
+- Verified applied on production 2026-08-31: all V2.1 and V2.2 migrations are in `supabase_migrations.schema_migrations`,
+  `bus-app` and `bus-app-media` are deployed, and `busapp.wexio.be` serves the matching build.
+  One unrelated pending migration (`20260830120000_notification_web_push_typed_target`) was deliberately left unapplied.
 - Anonymous Supabase users are enabled for parent devices.
 - `BUS_APP_CODE_HASH_SECRET` and existing VAPID push secrets are configured server-side.
 - CORS preflight from `https://busapp.wexio.be` returns 204 with the exact allowed origin.
@@ -96,13 +98,12 @@ Built-in avatars stay the default and the final fallback. A photo is optional an
 - Twelve `tests/server/bus-app-v2-contract.test.mjs` security/lifecycle contract tests pass, four of them covering the V2.1 profile, private-media and avatar-pulse invariants.
 - Eighteen Playwright viewport/localization tests cover 320×568 through 768×1024, NL/FR, landscape, 200% inherited text, overloaded content, route, and filtered parent views.
 - Screenshots are stored in `artifacts/bus-app-v2`.
-- A production smoke run creates and removes temporary users/data while verifying Bus Space creation, stop/passenger creation, automatic route, immutable trip, GPS, attendance, anonymous parent grant, and filtered parent payload.
+- A production smoke run creates and removes temporary users/data while verifying Bus Space creation, stop/passenger creation, automatic route, immutable trip, GPS, attendance, anonymous parent grant, filtered parent payload, private profile and passenger photo upload, the parent bus profile DTO, and the resolved bus profile permission. It passed on 2026-08-31.
 
 ## Remaining technical debt
 
 - Replace estimated local geometry with a monitored road-network OSRM/VROOM deployment before presenting turn-by-turn or road-exact ETAs.
 - Add staff invitation UI when multi-staff onboarding becomes a product requirement; the membership/permission model is already extensible.
 - Add per-event notification preferences if users need to mute specific event types. Current critical trip events are enabled by default.
-- The V2.1 photo path has no live production smoke run yet; `scripts/production-smoke.mjs` still covers only the V2 domain.
 - Retired (`REPLACED`) avatar asset rows are kept as an audit trail after their storage objects are deleted. Add a retention
   sweep if that history stops being useful.
