@@ -269,10 +269,12 @@ async function vroomOptimize(input: RouteInput): Promise<RouteResult> {
 }
 
 // --- openrouteservice / HeiGIT ---------------------------------------------------------
-// Official endpoints (api.openrouteservice.org): POST /optimization for stop ordering
+// Host: api.heigit.org. The former api.openrouteservice.org was deprecated on 2026-04-28,
+// cut to 10% quota on 2026-08-27 and shuts down on 2026-09-28; existing keys carry over
+// with full quota on the new host. Endpoints: POST /optimization for stop ordering
 // (VROOM-backed) and POST /v2/directions/{profile}/geojson for real road geometry.
 // The key is read from the server environment and never leaves the Edge function.
-function orsBase(): string { return String(Deno.env.get('OPENROUTESERVICE_BASE_URL') || 'https://api.openrouteservice.org').replace(/\/$/, ''); }
+function orsBase(): string { return String(Deno.env.get('OPENROUTESERVICE_BASE_URL') || 'https://api.heigit.org').replace(/\/$/, ''); }
 function orsProfile(): string { return String(Deno.env.get('OPENROUTESERVICE_PROFILE') || 'driving-car').trim(); }
 
 async function orsRequest(path: string, body: unknown): Promise<Record<string, unknown>> {

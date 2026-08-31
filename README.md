@@ -40,11 +40,46 @@ driver -> Bus Space -> bus -> stops -> passengers -> route plan -> trip
 parent code -> anonymous session -> restricted parent grant
 ```
 
+## Map and routing
+
+The map is [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) rendering the free
+[OpenFreeMap](https://openfreemap.org) `liberty` style. OpenFreeMap needs no API key and no
+registration, so its style URL is safe in the browser bundle — a public style URL is not a
+secret. The style provider is centralised in `app/src/map-config.ts`, so moving to
+Protomaps/PMTiles, MapTiler or a self-hosted style is a configuration change only.
+
+MapLibre is about a megabyte, so it is loaded lazily: the map renderer is fetched only when
+a map is actually shown, keeping the initial bundle small for a phone in a vehicle.
+
+**The map is never the only source of route information.** Distance, duration, ordered stops,
+next stop and ETA are always available as text, and a tile outage never blocks attendance,
+the next stop or GPS recording.
+
+### Required Content-Security-Policy
+
+MapLibre decodes tiles in a worker created from a blob URL, and fetches the style, glyphs,
+sprites and vector tiles from the tile host. The site CSP must therefore allow both:
+
+```text
+worker-src 'self' blob:;
+connect-src 'self' <supabase origins> https://tiles.openfreemap.org;
+img-src 'self' data: blob: https://tiles.openfreemap.org;
+```
+
+Without `worker-src`, `script-src` is used as a fallback and the map cannot start at all.
+The production smoke asserts these headers against the deployed site, because a preview
+server sends no CSP and so cannot catch a regression here.
+
 ## Routing providers
 
 The routing layer is provider-based:
 
 - `local` is the current safe fallback. It estimates ordering, distance and duration and is always labelled as an estimate.
+- `openrouteservice` is the intended road provider, on the current HeiGIT host
+  `https://api.heigit.org`. The former `api.openrouteservice.org` was deprecated on
+  2026-04-28, reduced to 10% quota on 2026-08-27 and shuts down on 2026-09-28; existing keys
+  carry over. The base URL stays configurable via `OPENROUTESERVICE_BASE_URL`.
+  The routing API key is server-side only and is never exposed to the browser.
 - `osrm` accepts road geometry only when the provider returns actual GeoJSON geometry.
 - `vroom` optimizes stop order. Its waypoint geometry is not presented as a road map.
 

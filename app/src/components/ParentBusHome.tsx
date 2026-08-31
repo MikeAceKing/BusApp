@@ -5,6 +5,7 @@ import { supabase } from '../supabase';
 import type { BusNotification, Locale, ParentHome, ParentVisibleBusProfile, ParentVisibleStaffProfile } from '../types';
 import { AddressText, BottomNav, ErrorBanner, FriendlyBus, HonestMapState, StateCard, createT, type T } from './Shared';
 import { AvatarDisplay, AvatarEditor, UserProfileEditor, roleLabel } from './AvatarProfiles';
+import { LazyBusMap, type MapStop } from './LazyBusMap';
 
 type ParentTab = 'home' | 'map' | 'notifications' | 'profile';
 
@@ -108,11 +109,16 @@ function StaffCard({ staff, locale }: { staff: ParentVisibleStaffProfile; locale
 function ParentBusProfile({ profile, locale, onBack }: { profile: ParentVisibleBusProfile | null; locale: Locale; onBack: () => void }) {
   const t: T = createT(locale);
   if (!profile) return <section className="parent-bus-profile"><button className="secondary-button button-with-icon" onClick={onBack}><ArrowLeft aria-hidden="true" />{t('backToBus')}</button><StateCard icon={BusFront} title={t('loading')} /></section>;
+  // Only the parent's own stop is ever placed on their map.
+  const parentMapStops: MapStop[] = profile.map?.ownStop
+    ? [{ id: 'own', longitude: profile.map.ownStop.longitude, latitude: profile.map.ownStop.latitude, label: profile.map.ownStop.displayLabel, kind: 'own' }]
+    : [];
   const status = profile.bus.currentTripStatus === 'IN_TRANSIT' ? t('onWay') : profile.bus.currentTripStatus === 'ARRIVED' ? t('arrived') : profile.bus.currentTripStatus === 'BOARDING' ? t('boarding') : t('noActiveTrip');
   return <section className="parent-bus-profile">
     <button className="secondary-button button-with-icon" onClick={onBack}><ArrowLeft aria-hidden="true" />{t('backToBus')}</button>
     <header className="section-heading"><div><small>{t('yourBus')}</small><h1>{profile.bus.displayName}</h1></div></header>
     <div className="parent-bus-photo"><AvatarDisplay kind="bus" avatar={profile.bus.avatar} name={profile.bus.displayName} size="large"/></div>
+    {parentMapStops.length > 0 && <LazyBusMap variant="parent" stops={parentMapStops} bus={profile.map?.bus ? { longitude: profile.map.bus.longitude, latitude: profile.map.bus.latitude, name: profile.bus.displayName, avatar: profile.bus.avatar } : null} routeGeometry={profile.map?.routeGeometry ?? null} geometrySource={profile.map?.routeGeometry ? 'road' : 'estimate'} locale={locale} />}
     <p className="parent-bus-status"><Circle aria-hidden="true" />{t('busToday')}: {status}</p>
     {profile.driver || profile.attendant ? <div className="parent-staff-list">
       {profile.driver && <StaffCard staff={profile.driver} locale={locale} />}

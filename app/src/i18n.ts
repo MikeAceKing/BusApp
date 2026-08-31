@@ -21,6 +21,9 @@ const nl = {
   myBusSection: 'Mijn bus', yourBus: 'Jouw bus', viewBus: 'Bekijk bus', backToBus: 'Terug', busToday: 'Jouw bus vandaag', noStaffAssigned: 'Nog geen chauffeur toegewezen.',
   profileSaveFailed: 'Je profiel kon niet worden opgeslagen. Probeer opnieuw.', busSaveFailed: 'De busfoto kon niet worden opgeslagen. Probeer opnieuw.', avatarSaveFailed: 'De avatar kon niet worden opgeslagen. Probeer opnieuw.',
   nameRequired: 'Vul een naam in.', profilePerson: 'Dit is jouw persoonlijke profiel, niet je bus.',
+  mapLabel: 'Kaart van de rit', mapUnavailableShort: 'Kaart tijdelijk niet beschikbaar', fitRoute: 'Hele route tonen', centerBus: 'Bus centreren',
+  routeCalculating: 'Route berekenen…', routeNotCalculated: 'Route nog niet berekend', routeProviderFailed: 'De exacte route kon tijdelijk niet worden berekend. BusApp toont daarom een schatting.',
+  realRouteReady: 'Route klaar', remainingDistance: 'Resterende afstand', remainingTime: 'Resterende tijd', expectedArrival: 'Verwachte aankomst', lastUpdate: 'Laatste update', recalculateRoute: 'Route opnieuw berekenen', fullTrip: 'Volledige rit',
 } as const;
 
 const fr: Record<keyof typeof nl, string> = {
@@ -44,6 +47,9 @@ const fr: Record<keyof typeof nl, string> = {
   myBusSection: 'Mon bus', yourBus: 'Votre bus', viewBus: 'Voir le bus', backToBus: 'Retour', busToday: "Votre bus aujourd'hui", noStaffAssigned: 'Aucun conducteur assigné pour le moment.',
   profileSaveFailed: "Votre profil n'a pas pu être enregistré. Réessayez.", busSaveFailed: "La photo du bus n'a pas pu être enregistrée. Réessayez.", avatarSaveFailed: "L'avatar n'a pas pu être enregistré. Réessayez.",
   nameRequired: 'Indiquez un nom.', profilePerson: "Ceci est votre profil personnel, pas votre bus.",
+  mapLabel: 'Carte du trajet', mapUnavailableShort: 'Carte temporairement indisponible', fitRoute: "Afficher tout l'itinéraire", centerBus: 'Centrer sur le bus',
+  routeCalculating: "Calcul de l'itinéraire…", routeNotCalculated: "Itinéraire pas encore calculé", routeProviderFailed: "L'itinéraire exact n'a pas pu être calculé temporairement. BusApp affiche donc une estimation.",
+  realRouteReady: 'Itinéraire prêt', remainingDistance: 'Distance restante', remainingTime: 'Temps restant', expectedArrival: 'Arrivée estimée', lastUpdate: 'Dernière mise à jour', recalculateRoute: "Recalculer l'itinéraire", fullTrip: 'Trajet complet',
 };
 
 const dictionary: Record<Locale, Record<keyof typeof nl, string>> = { nl, fr };

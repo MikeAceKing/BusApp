@@ -24,13 +24,19 @@ const passengerId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const grantId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const tripId = '55555555-5555-4555-8555-555555555555';
 const pageErrors = new WeakMap<Page, string[]>();
+const tilesBlocked = new WeakSet<Page>();
 
 test.beforeEach(async ({ page }) => {
   const errors: string[] = [];
   pageErrors.set(page, errors);
-  page.on('pageerror', (error) => errors.push(error.message));
+  // Only a test that deliberately blocks tiles may tolerate a resource-load failure, and
+  // the browser reports those without a URL, so the tolerance is opted into per page.
+  const expected = (text: string) => text.includes('wss://example.supabase.co/')
+    || text.includes('tiles.openfreemap.org')
+    || (tilesBlocked.has(page) && /net::ERR_FAILED|Failed to load resource/.test(text));
+  page.on('pageerror', (error) => { if (!expected(error.message)) errors.push(error.message); });
   page.on('console', (message) => {
-    if (message.type() === 'error' && !message.text().includes('wss://example.supabase.co/')) errors.push(message.text());
+    if (message.type() === 'error' && !expected(message.text())) errors.push(message.text());
   });
   await page.route('**/auth/v1/**', (route) => route.fulfill({
     json: { user: { id: userId, email: 'driver@example.test', aud: 'authenticated', role: 'authenticated' } },
@@ -340,3 +346,73 @@ for (const locale of ['nl', 'fr'] as const) {
     await page.screenshot({ path: `${artifacts}/parent-profile-edit-${locale}-412x915.png`, fullPage: true });
   });
 }
+
+// Tiles are blocked in every map test: the suite stays hermetic, and a tile outage is
+// exactly the failure mode the trip runtime must survive.
+async function blockTiles(page: Page) {
+  tilesBlocked.add(page);
+  await page.route('https://tiles.openfreemap.org/**', (route) => route.abort());
+}
+
+for (const locale of ['nl', 'fr'] as const) {
+  test(`${locale} route map renders stops without inventing a road line`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await blockTiles(page);
+    await seed(page, 'BUS', locale);
+    await mockApi(page, { locale });
+    await page.goto('/');
+    await page.getByRole('navigation', { name: 'BusApp' }).getByRole('button', { name: locale === 'fr' ? 'Itinéraire' : 'Route' }).click();
+
+    // The map is present and lazily loaded.
+    await expect(page.locator('.bus-map')).toBeVisible();
+    await expect(page.locator('.bus-map__canvas')).toBeVisible();
+
+    // The fixture route is an estimate, so it keeps the approximation marker and the
+    // explicit estimate wording, and no road polyline may exist.
+    await expect(page.getByText(locale === 'fr' ? "Estimation d'itinéraire" : 'Route-inschatting')).toBeVisible();
+    await expect(page.getByText('± 31.8 km')).toBeVisible();
+    await expect(page.locator('.route-map,[data-route-geometry],.bus-scene')).toHaveCount(0);
+
+    // A tile outage never removes the route facts or the trip action.
+    await expect(page.getByText('± 42 min')).toBeVisible();
+    await expect(page.getByRole('button', { name: locale === 'fr' ? 'Démarrer le trajet' : 'Start rit' })).toBeVisible();
+    await geometry(page, true);
+    await page.screenshot({ path: `${artifacts}/route-map-${locale}-390x844.png`, fullPage: true });
+  });
+}
+
+test('the map fits every supported viewport without overflow or hidden attribution', async ({ page }) => {
+  await blockTiles(page);
+  await seed(page, 'BUS', 'nl');
+  await mockApi(page, { locale: 'nl' });
+  for (const viewport of [{ width: 320, height: 800 }, { width: 360, height: 800 }, { width: 390, height: 844 }, { width: 412, height: 915 }, { width: 430, height: 932 }, { width: 768, height: 1024 }, { width: 820, height: 1180 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    await page.getByRole('navigation', { name: 'BusApp' }).getByRole('button', { name: 'Route' }).click();
+    await expect(page.locator('.bus-map')).toBeVisible();
+    // The map must never push the page wider than the viewport.
+    await geometry(page, true);
+    const clear = await page.evaluate(() => {
+      const map = document.querySelector('.bus-map');
+      const nav = document.querySelector('.bottom-nav');
+      if (!map || !nav) return false;
+      return map.getBoundingClientRect().width <= document.documentElement.clientWidth + 1;
+    });
+    expect(clear, `map must fit ${viewport.width}px`).toBe(true);
+  }
+});
+
+test('landscape and 200 percent text keep the map usable', async ({ page }) => {
+  await blockTiles(page);
+  await seed(page, 'BUS', 'nl');
+  await mockApi(page, { locale: 'nl' });
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto('/');
+  await page.getByRole('navigation', { name: 'BusApp' }).getByRole('button', { name: 'Route' }).click();
+  await expect(page.locator('.bus-map')).toBeVisible();
+  await geometry(page, true);
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+  await expect(page.getByText('Route-inschatting')).toBeVisible();
+  await geometry(page);
+  await page.screenshot({ path: `${artifacts}/route-map-landscape-200.png`, fullPage: true });
+});

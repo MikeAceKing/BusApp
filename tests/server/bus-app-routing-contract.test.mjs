@@ -6,6 +6,12 @@ import test from 'node:test';
 const routing = readFileSync('supabase/functions/bus-app/routing.ts', 'utf8');
 const server = readFileSync('supabase/functions/bus-app/index.ts', 'utf8');
 const usagePatch = readFileSync('supabase/migrations/20260831140000_bus_app_routing_provider_usage.sql', 'utf8');
+const deselectFix = readFileSync('supabase/migrations/20260831150000_bus_app_route_plan_deselect_fix.sql', 'utf8');
+const appRoot = existsSync('sites/busapp/src') ? 'sites/busapp/src' : 'app/src';
+const mapConfig = readFileSync(`${appRoot}/map-config.ts`, 'utf8');
+const busMap = readFileSync(`${appRoot}/components/BusMap.tsx`, 'utf8');
+const routePlanner = readFileSync(`${appRoot}/components/RoutePlanner.tsx`, 'utf8');
+const parentHome = readFileSync(`${appRoot}/components/ParentBusHome.tsx`, 'utf8');
 
 test('the routing provider stays an abstraction with declared capabilities', () => {
   assert.match(routing, /export type RoutingProviderName = 'local' \| 'openrouteservice' \| 'osrm' \| 'vroom'/);
@@ -16,7 +22,9 @@ test('the routing provider stays an abstraction with declared capabilities', () 
 });
 
 test('openrouteservice uses current official endpoints and a server-side key', () => {
-  assert.match(routing, /https:\/\/api\.openrouteservice\.org/);
+  // api.openrouteservice.org was deprecated 2026-04-28 and shuts down 2026-09-28.
+  assert.match(routing, /'https:\/\/api\.heigit\.org'/);
+  assert.doesNotMatch(routing.replace(/\/\/.*$/gm, ''), /api\.openrouteservice\.org/);
   assert.match(routing, /'\/optimization'/);
   assert.match(routing, /`\/v2\/directions\/\$\{encodeURIComponent\(orsProfile\(\)\)\}\/geojson`/);
   assert.match(routing, /\/geocode\/search/);
@@ -130,4 +138,54 @@ test('no routing key is present in any built browser bundle', () => {
     }
   }
   assert.ok(scanned > 0, 'no bundle files were scanned');
+});
+
+test('the basemap is OpenFreeMap, keyless, attributed and replaceable', () => {
+  assert.match(mapConfig, /https:\/\/tiles\.openfreemap\.org\/styles\/liberty/);
+  assert.match(mapConfig, /export type MapStyleProvider = 'openfreemap' \| 'custom'/);
+  assert.match(mapConfig, /VITE_MAP_STYLE_URL/);
+  // Required attribution, kept in one place.
+  assert.match(mapConfig, /openfreemap\.org[\s\S]*openmaptiles\.org[\s\S]*openstreetmap\.org\/copyright/);
+  assert.match(busMap, /customAttribution: mapAttribution/);
+  // A public style URL is not a secret, but no private key may ever appear here.
+  assert.doesNotMatch(mapConfig, /api_key|apiKey|access_token|OPENROUTESERVICE/i);
+  // Components never hardcode a style URL of their own.
+  for (const source of [busMap, routePlanner, parentHome]) assert.doesNotMatch(source, /tiles\.openfreemap\.org/);
+});
+
+test('a road polyline is impossible unless the provider returned road geometry', () => {
+  // The single gate in the renderer.
+  assert.match(busMap, /const roadGeometry = geometrySource === 'road' && routeGeometry && routeGeometry\.coordinates\.length >= 2 \? routeGeometry : null/);
+  // Layers are added only from roadGeometry, and removed when it is absent.
+  assert.match(busMap, /if \(!roadGeometry\) \{[\s\S]*removeLayer\(routeLineId\)[\s\S]*removeLayer\(routeCasingId\)[\s\S]*removeSource\(routeSourceId\)/);
+  assert.match(busMap, /instance\.addSource\(routeSourceId, \{ type: 'geojson', data \}\)/);
+  const code = busMap.replace(/\/\/.*$/gm, '');
+  // No other geometry may reach the line source.
+  assert.doesNotMatch(code, /addSource\(routeSourceId[\s\S]{0,200}routeGeometry[^a-zA-Z]/);
+  // The staff page passes geometry only when the source is road.
+  assert.match(routePlanner, /routeGeometry=\{geometrySource === 'road' \? plan\?\.route_geometry \?\? null : null\}/);
+  // The estimate keeps its approximation marker; a road route drops it.
+  assert.match(routePlanner, /\{geometrySource === 'road' \? '' : '± '\}/);
+});
+
+test('the parent map carries only that parent, their stop and the bus', () => {
+  const helper = server.match(/function parentRouteGeometry\([\s\S]*?\n\}/)?.[0] || '';
+  assert.ok(helper);
+  // Road geometry only, and trimmed to the span between the bus and this parent's stop.
+  assert.match(helper, /if\(text\(metadata\.geometrySource\)!=='road'\)return null/);
+  assert.match(helper, /const from=nearestVertexIndex\(coordinates,bus\.longitude,bus\.latitude\)/);
+  assert.match(helper, /const to=nearestVertexIndex\(coordinates,stop\.longitude,stop\.latitude\)/);
+  // The parent bus coordinate is rounded like every other parent-facing coordinate.
+  assert.match(server, /busPoint=\{longitude:Math\.round\(numberValue\(live\.data\.longitude\)\*1000\)\/1000/);
+  // Exactly one stop reaches a parent map: their own.
+  assert.match(parentHome, /const parentMapStops: MapStop\[\] = profile\.map\?\.ownStop\n\s*\? \[\{ id: 'own'/);
+  assert.doesNotMatch(parentHome, /stops\.map\(|passengers\.map\([\s\S]{0,80}kind: 'stop'/);
+});
+
+test('the route plan deselect fix is additive and explains itself', () => {
+  assert.match(deselectFix, /alter table public\.bus_app_route_plans alter column selected_at drop not null/);
+  // Non-destructive: nothing is deleted or rewritten.
+  assert.doesNotMatch(deselectFix, /\bdrop table\b|\bdelete from\b|\btruncate\b/i);
+  // The endpoint no longer swallows a failed deselect into a confusing conflict.
+  assert.match(server, /const deselected=await db\.from\('bus_app_route_plans'\)\.update\(\{selected_at:null\}\)[\s\S]{0,120}if\(deselected\.error\)throw deselected\.error;/);
 });

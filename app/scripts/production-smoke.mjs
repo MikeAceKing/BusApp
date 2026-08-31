@@ -151,6 +151,21 @@ try {
   assert(parentHome.trip?.location && Object.keys(parentHome.trip.location).every((key) => ['latitude', 'longitude', 'capturedAt'].includes(key)), 'Parent location payload is not filtered.');
   assert(!('stops' in (parentHome.trip || {})) && !('members' in parentHome), 'Parent received private route/member data.');
 
+  // The map runs under the production CSP, which a preview-server test cannot exercise.
+  // MapLibre needs a blob worker and the tile host, so both are verified against the
+  // deployed headers rather than assumed.
+  const site = String(process.env.BUS_APP_SITE_URL || 'https://busapp.wexio.be');
+  const siteResponse = await fetch(site, { redirect: 'follow' });
+  const csp = siteResponse.headers.get('content-security-policy') || '';
+  assert(csp, 'The production site must send a Content-Security-Policy.');
+  assert(/worker-src[^;]*blob:/.test(csp), 'CSP must allow a blob worker or MapLibre cannot start.');
+  assert(/connect-src[^;]*https:\/\/tiles\.openfreemap\.org/.test(csp), 'CSP must allow the OpenFreeMap tile host.');
+  assert(!/script-src[^;]*unsafe-eval/.test(csp), 'CSP must not have been loosened with unsafe-eval.');
+  const styleResponse = await fetch('https://tiles.openfreemap.org/styles/liberty');
+  assert(styleResponse.ok, 'The OpenFreeMap style must be reachable.');
+  const style = await styleResponse.json();
+  assert(style.version === 8 && style.sources, 'The OpenFreeMap style must be a valid MapLibre style.');
+
   const parentBus = await request(parentToken, `/parent/bus-profile?grantId=${activated.grantId}`);
   assert(parentBus.bus?.displayName, 'Parent did not receive the assigned bus identity.');
   assert(parentBus.bus.avatar && typeof parentBus.bus.avatar.source === 'string', 'Parent bus avatar reference is missing.');
@@ -160,11 +175,16 @@ try {
   const parentBusText = JSON.stringify(parentBus);
   assert(!parentBusText.includes('@'), 'Parent bus payload contains an address-like contact value.');
   assert(!parentBusText.includes(driverId), 'Parent bus payload leaks a staff user id.');
+  if (parentBus.map) {
+    assert(!Array.isArray(parentBus.map.stops), 'Parent map must not carry a stop list.');
+    // Only road geometry may ever reach a parent map; an estimate carries none.
+    assert(parentBus.map.routeGeometry === null || parentBus.map.routeGeometry.type === 'LineString', 'Parent map geometry must be a LineString or absent.');
+  }
 
   home = await request(driverToken, `/spaces/${spaceId}/home`);
   assert(home.activeTrip?.id === started.tripId, 'Active trip is not visible to staff.');
   assert(home.permissions?.manageBusProfile === true, 'Bus profile permission was not resolved for the owner.');
-  console.log(JSON.stringify({ ok: true, profileLanguage: true,privateProfilePhoto:true,space: true, stop: true, passenger: true,syncedPassengerPhoto:true, route: true, trip: true, anonymousParent: true, filteredParentPayload: true, parentBusProfile: true, busProfilePermission: true }));
+  console.log(JSON.stringify({ ok: true, profileLanguage: true,privateProfilePhoto:true,space: true, stop: true, passenger: true,syncedPassengerPhoto:true, route: true, trip: true, anonymousParent: true, filteredParentPayload: true, parentBusProfile: true, busProfilePermission: true, mapCsp: true, mapStyle: true }));
 } finally {
   if (spaceId) await admin.from('bus_app_spaces').delete().eq('id', spaceId);
   if (parentId) await admin.auth.admin.deleteUser(parentId);
