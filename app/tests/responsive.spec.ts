@@ -1,16 +1,240 @@
 import { mkdirSync } from 'node:fs';
-import { expect,test,type Page } from 'playwright/test';
-const viewports=[{width:320,height:568},{width:360,height:740},{width:375,height:812},{width:390,height:844},{width:412,height:915},{width:430,height:932},{width:768,height:1024}];
-const artifacts='../../artifacts/bus-app-v2';
-const userId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',spaceId='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',busId='cccccccc-cccc-4ccc-8ccc-cccccccccccc',stopId='dddddddd-dddd-4ddd-8ddd-dddddddddddd',passengerId='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',grantId='ffffffff-ffff-4fff-8fff-ffffffffffff';
-test.beforeEach(async({page})=>{await page.route('**/auth/v1/**',route=>route.fulfill({json:{user:{id:userId,email:'driver@example.test',aud:'authenticated',role:'authenticated'}}}));});
-async function geometry(page:Page){const result=await page.evaluate(()=>({width:document.documentElement.scrollWidth,viewport:document.documentElement.clientWidth,clipped:[...document.querySelectorAll('button,input,select,textarea')].filter((node)=>{const rect=node.getBoundingClientRect();return rect.left<-.5||rect.right>innerWidth+.5}).length}));expect(result.width).toBeLessThanOrEqual(result.viewport+1);expect(result.clipped).toBe(0)}
-function token(){const payload=Buffer.from(JSON.stringify({sub:userId,exp:9_999_999_999,is_anonymous:false})).toString('base64url');return `eyJhbGciOiJub25lIn0.${payload}.signature`}
-async function seed(page:Page,mode:'BUS'|'PARENT',locale:'nl'|'fr',parent=false){await page.addInitScript(({accessToken,selectedMode,language,parentUser})=>{localStorage.clear();localStorage.setItem('bus-app-locale',language);localStorage.setItem('bus-app-mode',selectedMode);localStorage.setItem('wexio-bus-app-auth-v2',JSON.stringify({access_token:accessToken,refresh_token:'fixture',expires_at:9_999_999_999,expires_in:3600,token_type:'bearer',user:{id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',email:parentUser?null:'driver@example.test',aud:'authenticated',role:'authenticated',is_anonymous:parentUser}}))},{accessToken:token(),selectedMode:mode,language:locale,parentUser:parent});}
-async function mockApi(page:Page,parent=false,overloaded=false){await page.route('**/functions/v1/bus-app/**',async(route)=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/context'))return route.fulfill({json:{user:{id:userId,email:parent?null:'driver@example.test',isAnonymous:parent},spaces:parent?[]:[{id:spaceId,name:'Bus met een lange maar geldige naam',avatar_key:'bus',default_language:'nl',roles:['OWNER']}],parentGrants:parent?[{id:grantId,parent_access_id:'11111111-1111-4111-8111-111111111111',last_seen_at:new Date().toISOString()}]:[]}});if(path.endsWith(`/spaces/${spaceId}/home`))return route.fulfill({json:{space:{id:spaceId,name:'Buurtbus',avatar_key:'bus',default_language:'nl',roles:['OWNER']},bus:{id:busId,bus_space_id:spaceId,name:'Buurtbus',avatar_key:'bus',capacity:overloaded?2:16,start_display_address:'Stationsstraat 123 bus 45, 9300 Aalst',start_latitude:50.94,start_longitude:4.04,end_display_address:null,end_latitude:null,end_longitude:null},stops:[{id:stopId,bus_space_id:spaceId,bus_id:busId,label:null,display_address:'Stationsstraat 18 met een zeer lange adresomschrijving, 9300 Aalst',latitude:50.95,longitude:4.05,expected_passenger_count:3,manual_sequence:1,active:true},{id:'22222222-2222-4222-8222-222222222222',bus_space_id:spaceId,bus_id:busId,label:'Markt',display_address:'Grote Markt 7, 9300 Aalst',latitude:50.96,longitude:4.06,expected_passenger_count:1,manual_sequence:2,active:true}],passengers:[{id:passengerId,bus_space_id:spaceId,stop_id:stopId,display_name:'Alex D.',avatar_key:'initials-purple',active:true}],routePlan:{id:'33333333-3333-4333-8333-333333333333',bus_id:busId,provider:'local_heuristic',optimization_mode:'AUTOMATIC',distance_meters:31750,duration_seconds:2520,route_geometry:{type:'LineString',coordinates:[[4.04,50.94],[4.05,50.95],[4.06,50.96]]},provider_metadata:{estimate:true,geometrySource:'estimate'},stale_at:null,stops:[{stop_id:stopId,sequence:1,estimated_arrival_offset_seconds:900,display_address_snapshot:'Stationsstraat 18, Aalst',latitude_snapshot:50.95,longitude_snapshot:4.05,expected_passenger_count_snapshot:3}]},activeTrip:null,members:[{id:'44444444-4444-4444-8444-444444444444',user_id:userId,role:'OWNER'}],parentAccess:[]}});if(path.endsWith('/parent/home'))return route.fulfill({json:{grantId,parent:{displayName:'Alex'},space:{id:spaceId,name:'Buurtbus',avatar_key:'bus',default_language:'nl'},bus:{id:busId,name:'Buurtbus',avatar_key:'bus'},trip:{id:'55555555-5555-4555-8555-555555555555',status:'IN_TRANSIT',currentStopSequence:0,startedAt:new Date().toISOString(),location:{latitude:50.945,longitude:4.045,capturedAt:new Date().toISOString()}},passengers:[{id:passengerId,bus_space_id:spaceId,stop_id:stopId,display_name:'Alex D.',avatar_key:'initials-purple',active:true,stop:{id:stopId,display_address:'Stationsstraat 18, 9300 Aalst',latitude:50.95,longitude:4.05},status:'BOARDED',statusVersion:2,etaMinutes:7}]}});if(path.endsWith('/notifications'))return route.fulfill({json:{notifications:[]}});return route.fulfill({json:{ok:true}})});}
-for(const locale of ['nl','fr'] as const)for(const viewport of viewports)test(`${locale} entry ${viewport.width}x${viewport.height}`,async({page})=>{await page.setViewportSize(viewport);await page.addInitScript((language)=>{localStorage.clear();localStorage.setItem('bus-app-locale',language)},locale);await page.goto('/');await expect(page.getByText(locale==='fr'?'Pourquoi êtes-vous ici ?':'Waarvoor kom je?')).toBeVisible();await expect(page.getByRole('button',{name:new RegExp(locale==='fr'?'JE SUIS PARENT':'IK BEN OUDER','i')})).toBeVisible();await geometry(page);mkdirSync(artifacts,{recursive:true});if([320,390,768].includes(viewport.width))await page.screenshot({path:`${artifacts}/entry-${locale}-${viewport.width}x${viewport.height}.png`,fullPage:true})});
-test('driver home supports overloaded data at mobile width',async({page})=>{await page.setViewportSize({width:390,height:844});await seed(page,'BUS','nl');await mockApi(page,false,true);await page.goto('/');await expect(page.getByText('4 passagiers voor 2 plaatsen')).toBeVisible();await expect(page.getByText(/Route-inschatting/).first()).toBeVisible();await expect(page.getByRole('navigation',{name:'BusApp'}).locator('svg')).toHaveCount(4);await geometry(page);await page.screenshot({path:`${artifacts}/driver-overloaded-390x844.png`,fullPage:true})});
-test('route estimate is honest and usable on mounted tablet',async({page})=>{await page.setViewportSize({width:768,height:1024});await seed(page,'BUS','fr');await mockApi(page);await page.goto('/');await page.getByRole('navigation',{name:'BusApp'}).getByRole('button',{name:/Itinéraire/}).click();await expect(page.getByRole('heading',{level:1,name:"Estimation d'itinéraire"})).toBeVisible();await expect(page.getByText('Distance et durée estimées')).toHaveCount(2);await expect(page.getByText('± 31.8')).toBeVisible();await expect(page.locator('.route-map,.bus-scene,[data-route-geometry]')).toHaveCount(0);await geometry(page);await page.screenshot({path:`${artifacts}/route-fr-768x1024.png`,fullPage:true})});
-test('parent sees only own passenger and stop',async({page})=>{await page.setViewportSize({width:412,height:915});await seed(page,'PARENT','nl',true);await mockApi(page,true);await page.goto('/');await expect(page.getByText('Hallo Alex')).toBeVisible();await expect(page.getByText('Stationsstraat 18, 9300 Aalst')).toBeVisible();await expect(page.getByText('Alex D.').first()).toBeVisible();await expect(page.getByText('Op de bus')).toBeVisible();await geometry(page);await page.screenshot({path:`${artifacts}/parent-nl-412x915.png`,fullPage:true})});
-test('manifest and install icons are reachable and dimensioned',async({page})=>{await page.goto('/');const manifest=await page.evaluate(async()=>await fetch('/manifest.webmanifest').then((response)=>response.json()));expect(manifest.display).toBe('standalone');expect(manifest.icons).toHaveLength(4);for(const icon of manifest.icons){const result=await page.evaluate(async({src,size})=>await new Promise<{ok:boolean;width:number;height:number}>((resolve)=>{const image=new Image();image.onload=()=>resolve({ok:true,width:image.naturalWidth,height:image.naturalHeight});image.onerror=()=>resolve({ok:false,width:0,height:0});image.src=src;}),{src:icon.src,size:icon.sizes});const expected=Number(String(icon.sizes).split('x')[0]);expect(result).toEqual({ok:true,width:expected,height:expected});}const apple=await page.evaluate(async()=>await new Promise<{width:number;height:number}>((resolve)=>{const image=new Image();image.onload=()=>resolve({width:image.naturalWidth,height:image.naturalHeight});image.src='/icons/apple-touch-icon.png';}));expect(apple).toEqual({width:180,height:180});});
-test('landscape entry and 200 percent inherited text do not overflow',async({page})=>{await page.setViewportSize({width:844,height:390});await page.addInitScript(()=>localStorage.clear());await page.goto('/');await page.evaluate(()=>{document.body.style.fontSize='200%'});await expect(page.getByText('Waarvoor kom je?')).toBeVisible();await geometry(page);await page.setViewportSize({width:320,height:568});await geometry(page)});
+import { expect, test, type Page } from 'playwright/test';
+
+const viewports = [
+  { width: 320, height: 568 },
+  { width: 360, height: 740 },
+  { width: 360, height: 800 },
+  { width: 375, height: 812 },
+  { width: 390, height: 844 },
+  { width: 412, height: 915 },
+  { width: 430, height: 932 },
+  { width: 768, height: 1024 },
+  { width: 820, height: 1180 },
+];
+const artifacts = '../../artifacts/bus-app-friendly';
+mkdirSync(artifacts, { recursive: true });
+
+const userId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const spaceId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const busId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const stopId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const secondStopId = '22222222-2222-4222-8222-222222222222';
+const passengerId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const grantId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+const tripId = '55555555-5555-4555-8555-555555555555';
+const pageErrors = new WeakMap<Page, string[]>();
+
+test.beforeEach(async ({ page }) => {
+  const errors: string[] = [];
+  pageErrors.set(page, errors);
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error' && !message.text().includes('wss://example.supabase.co/')) errors.push(message.text());
+  });
+  await page.route('**/auth/v1/**', (route) => route.fulfill({
+    json: { user: { id: userId, email: 'driver@example.test', aud: 'authenticated', role: 'authenticated' } },
+  }));
+});
+
+test.afterEach(async ({ page }) => {
+  expect(pageErrors.get(page), 'uncaught browser errors').toEqual([]);
+});
+
+async function geometry(page: Page, checkBottomNav = false) {
+  const result = await page.evaluate(() => ({
+    width: document.documentElement.scrollWidth,
+    viewport: document.documentElement.clientWidth,
+    clipped: [...document.querySelectorAll('button,input,select,textarea')].filter((node) => {
+      const rect = node.getBoundingClientRect();
+      return rect.left < -.5 || rect.right > innerWidth + .5;
+    }).length,
+  }));
+  expect(result.width).toBeLessThanOrEqual(result.viewport + 1);
+  expect(result.clipped).toBe(0);
+  if (checkBottomNav) {
+    await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+    await page.waitForTimeout(50);
+    const overlap = await page.evaluate(() => {
+      const content = document.querySelector('.page-content');
+      const nav = document.querySelector('.bottom-nav');
+      if (!content || !nav) return 0;
+      return content.lastElementChild!.getBoundingClientRect().bottom - nav.getBoundingClientRect().top;
+    });
+    expect(overlap, 'last content must remain above the fixed navigation').toBeLessThanOrEqual(1);
+  }
+}
+
+function token(parent = false) {
+  const payload = Buffer.from(JSON.stringify({ sub: userId, exp: 9_999_999_999, is_anonymous: parent })).toString('base64url');
+  return `eyJhbGciOiJub25lIn0.${payload}.signature`;
+}
+
+async function seed(page: Page, mode: 'BUS' | 'PARENT', locale: 'nl' | 'fr', parent = false) {
+  await page.addInitScript(({ accessToken, selectedMode, language, parentUser }) => {
+    localStorage.clear();
+    localStorage.setItem('bus-app-locale', language);
+    localStorage.setItem('bus-app-mode', selectedMode);
+    localStorage.setItem('wexio-bus-app-auth-v2', JSON.stringify({
+      access_token: accessToken,
+      refresh_token: 'fixture',
+      expires_at: 9_999_999_999,
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', email: parentUser ? null : 'driver@example.test', aud: 'authenticated', role: 'authenticated', is_anonymous: parentUser },
+    }));
+  }, { accessToken: token(parent), selectedMode: mode, language: locale, parentUser: parent });
+}
+
+function fixtures(overloaded = false, activeTrip = false) {
+  const stops = [
+    { id: stopId, bus_space_id: spaceId, bus_id: busId, label: null, display_address: '13, Reebokjeslaan, Verrewinkel, Ukkel, Brussel-Hoofdstad, 1180, België', latitude: 50.95, longitude: 4.05, expected_passenger_count: 3, manual_sequence: 1, active: true },
+    { id: secondStopId, bus_space_id: spaceId, bus_id: busId, label: 'Grote Markt', display_address: 'Grote Markt 7, 9300 Aalst, België', latitude: 50.96, longitude: 4.06, expected_passenger_count: 1, manual_sequence: 2, active: true },
+  ];
+  const active = { id: tripId, status: 'IN_TRANSIT', driver_session_id: '66666666-6666-4666-8666-666666666666', route_plan_id: '33333333-3333-4333-8333-333333333333', current_stop_sequence: 0 };
+  return {
+    home: {
+      space: { id: spaceId, name: 'Buurtbus Ukkel', avatar_key: 'bus', default_language: 'nl', roles: ['OWNER'] },
+      bus: { id: busId, bus_space_id: spaceId, name: 'Buurtbus Ukkel', avatar_key: 'bus', capacity: overloaded ? 2 : 16, start_display_address: 'Stationsstraat 123 bus 45, 9300 Aalst, België', start_latitude: 50.94, start_longitude: 4.04, end_display_address: null, end_latitude: null, end_longitude: null },
+      stops,
+      passengers: [{ id: passengerId, bus_space_id: spaceId, stop_id: stopId, display_name: 'Alex D.', avatar_key: 'initials-purple', active: true }],
+      routePlan: { id: active.route_plan_id, bus_id: busId, provider: 'local_heuristic', optimization_mode: 'AUTOMATIC', distance_meters: 31750, duration_seconds: 2520, route_geometry: { type: 'LineString', coordinates: [[4.04, 50.94], [4.05, 50.95], [4.06, 50.96]] }, provider_metadata: { estimate: true, geometrySource: 'estimate' }, stale_at: null, stops: stops.map((stop, index) => ({ stop_id: stop.id, sequence: index + 1, estimated_arrival_offset_seconds: 900 * (index + 1), display_address_snapshot: stop.display_address, latitude_snapshot: stop.latitude, longitude_snapshot: stop.longitude, expected_passenger_count_snapshot: stop.expected_passenger_count })) },
+      activeTrip: activeTrip ? active : null,
+      members: [{ id: '44444444-4444-4444-8444-444444444444', user_id: userId, role: 'OWNER' }],
+      parentAccess: [],
+    },
+    trip: {
+      role: 'OWNER',
+      trip: { ...active, bus: { id: busId, name: 'Buurtbus Ukkel', avatar_key: 'bus' }, stops: stops.map((stop, index) => ({ id: `77777777-7777-4777-8777-77777777777${index}`, source_stop_id: stop.id, sequence: index + 1, display_address: stop.display_address, latitude: stop.latitude, longitude: stop.longitude, expected_passenger_count: stop.expected_passenger_count, estimated_arrival_offset_seconds: 900 * (index + 1), status: index ? 'PENDING' : 'APPROACHING' })), nextStop: { id: '77777777-7777-4777-8777-777777777770', source_stop_id: stopId, sequence: 1, display_address: stops[0].display_address, latitude: stops[0].latitude, longitude: stops[0].longitude, expected_passenger_count: 3, estimated_arrival_offset_seconds: 900, status: 'APPROACHING' }, passengers: [{ id: '88888888-8888-4888-8888-888888888888', passenger_id: passengerId, trip_stop_id: '77777777-7777-4777-8777-777777777770', display_name_snapshot: 'Alex D.', avatar_key_snapshot: 'initials-purple', status: 'EXPECTED', version: 1 }] },
+    },
+  };
+}
+
+async function mockApi(page: Page, options: { parent?: boolean; overloaded?: boolean; activeTrip?: boolean } = {}) {
+  const data = fixtures(Boolean(options.overloaded), Boolean(options.activeTrip));
+  await page.route('**/functions/v1/bus-app/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/context')) return route.fulfill({ json: { user: { id: userId, email: options.parent ? null : 'driver@example.test', isAnonymous: Boolean(options.parent) }, spaces: options.parent ? [] : [data.home.space], parentGrants: options.parent ? [{ id: grantId, parent_access_id: '11111111-1111-4111-8111-111111111111', last_seen_at: new Date().toISOString() }] : [] } });
+    if (path.endsWith(`/spaces/${spaceId}/home`)) return route.fulfill({ json: data.home });
+    if (path.endsWith(`/spaces/${spaceId}/trip`)) return route.fulfill({ json: data.trip });
+    if (path.endsWith('/parent/home')) return route.fulfill({ json: { grantId, parent: { displayName: 'Alex' }, space: data.home.space, bus: { id: busId, name: 'Buurtbus Ukkel', avatar_key: 'bus' }, trip: { id: tripId, status: 'IN_TRANSIT', currentStopSequence: 0, startedAt: new Date().toISOString(), location: { latitude: 50.945, longitude: 4.045, capturedAt: new Date().toISOString() } }, passengers: [{ ...data.home.passengers[0], stop: { id: stopId, display_address: data.home.stops[0].display_address, latitude: 50.95, longitude: 4.05 }, status: 'BOARDED', statusVersion: 2, etaMinutes: 4 }] } });
+    if (path.endsWith('/notifications')) return route.fulfill({ json: { notifications: [] } });
+    return route.fulfill({ json: { ok: true } });
+  });
+}
+
+for (const locale of ['nl', 'fr'] as const) {
+  for (const viewport of viewports) {
+    test(`${locale} entry ${viewport.width}x${viewport.height}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await page.addInitScript((language) => { localStorage.clear(); localStorage.setItem('bus-app-locale', language); }, locale);
+      await page.goto('/');
+      await expect(page.getByText(locale === 'fr' ? 'Pourquoi êtes-vous ici ?' : 'Waarvoor kom je?')).toBeVisible();
+      await expect(page.getByRole('button', { name: new RegExp(locale === 'fr' ? 'JE SUIS PARENT' : 'IK BEN OUDER', 'i') })).toBeVisible();
+      await geometry(page);
+      if ([360, 390, 430, 768, 820].includes(viewport.width)) await page.screenshot({ path: `${artifacts}/entry-${locale}-${viewport.width}x${viewport.height}.png`, fullPage: true });
+    });
+  }
+}
+
+for (const locale of ['nl', 'fr'] as const) {
+  test(`${locale} driver pages stay warm, compact and reachable`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seed(page, 'BUS', locale);
+    await mockApi(page, { overloaded: true });
+    await page.goto('/');
+    await expect(page.locator('.friendly-landscape .friendly-landscape__bus')).toBeVisible();
+    await expect(page.getByText(locale === 'fr' ? '4 passagers pour 2 places' : '4 passagiers voor 2 plaatsen')).toBeVisible();
+    await geometry(page, true);
+    await page.screenshot({ path: `${artifacts}/home-${locale}-390x844.png`, fullPage: true });
+
+    await page.getByRole('navigation', { name: 'BusApp' }).getByRole('button', { name: locale === 'fr' ? 'Itinéraire' : 'Route' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: locale === 'fr' ? 'Itinéraire' : 'Route' })).toHaveCount(1);
+    await expect(page.getByText(locale === 'fr' ? 'Distance et durée estimées' : 'Geschatte afstand en reistijd')).toHaveCount(1);
+    await expect(page.getByText('± 31.8 km')).toBeVisible();
+    await expect(page.locator('.route-map,.bus-scene,[data-route-geometry]')).toHaveCount(0);
+    await geometry(page, true);
+    await page.screenshot({ path: `${artifacts}/route-${locale}-390x844.png`, fullPage: true });
+
+    await page.getByRole('navigation', { name: 'BusApp' }).getByRole('button', { name: locale === 'fr' ? 'Passagers' : 'Passagiers' }).click();
+    await expect(page.locator('.manager-panel')).toHaveCount(0);
+    await page.screenshot({ path: `${artifacts}/passengers-${locale}-390x844.png`, fullPage: true });
+    await page.getByRole('button', { name: locale === 'fr' ? 'Ajouter un passager' : 'Passagier toevoegen' }).click();
+    await expect(page.locator('.manager-panel')).toBeVisible();
+    await page.locator('.manager-form input').focus();
+    await page.setViewportSize({ width: 390, height: 520 });
+    await geometry(page, true);
+    await page.screenshot({ path: `${artifacts}/passenger-form-keyboard-${locale}-390x520.png`, fullPage: false });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('navigation', { name: 'BusApp' }).getByRole('button', { name: locale === 'fr' ? 'Profil' : 'Profiel' }).click();
+    expect(await page.locator('.profile-identity').evaluate((node) => node.getBoundingClientRect().height)).toBeLessThan(130);
+    await geometry(page, true);
+    await page.screenshot({ path: `${artifacts}/profile-${locale}-390x844.png`, fullPage: true });
+  });
+
+  test(`${locale} parent and active trip views remain private and operational`, async ({ page }) => {
+    await page.setViewportSize({ width: 412, height: 915 });
+    await seed(page, 'PARENT', locale, true);
+    await mockApi(page, { parent: true });
+    await page.goto('/');
+    await expect(page.getByText(locale === 'fr' ? 'Bonjour Alex' : 'Hallo Alex')).toBeVisible();
+    await expect(page.getByText('Reebokjeslaan 13').first()).toBeVisible();
+    await expect(page.getByText('1180 Ukkel').first()).toBeVisible();
+    await expect(page.getByText('Alex D.').first()).toBeVisible();
+    await expect(page.getByText(locale === 'fr' ? 'Presque à votre arrêt' : 'Bijna bij jouw halte')).toBeVisible();
+    await geometry(page, true);
+    await page.screenshot({ path: `${artifacts}/parent-${locale}-412x915.png`, fullPage: true });
+
+    await seed(page, 'BUS', locale);
+    await mockApi(page, { activeTrip: true });
+    await page.goto('/');
+    await expect(page.locator('.trip-progress__bus')).toBeVisible();
+    await expect(page.getByText(locale === 'fr' ? 'Prochain arrêt' : 'Volgende halte')).toBeVisible();
+    await expect(page.getByRole('button', { name: locale === 'fr' ? 'Approche' : 'Naderen' })).toBeVisible();
+    await geometry(page);
+    await page.screenshot({ path: `${artifacts}/active-trip-${locale}-412x915.png`, fullPage: true });
+  });
+}
+
+test('browser language is used only when no preference was stored', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('language-test-ready')) {
+      localStorage.clear();
+      sessionStorage.setItem('language-test-ready', '1');
+    }
+    Object.defineProperty(navigator, 'language', { configurable: true, value: 'fr-BE' });
+  });
+  await page.goto('/');
+  await expect(page.getByText('Pourquoi êtes-vous ici ?')).toBeVisible();
+  await page.getByRole('button', { name: 'NL' }).click();
+  await page.reload();
+  await expect(page.getByText('Waarvoor kom je?')).toBeVisible();
+});
+
+test('landscape and 200 percent inherited text do not overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.addInitScript(() => localStorage.clear());
+  await page.goto('/');
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+  await expect(page.getByText('Waarvoor kom je?')).toBeVisible();
+  await geometry(page);
+  await page.screenshot({ path: `${artifacts}/entry-landscape-200-percent.png`, fullPage: true });
+});
+
+test('manifest and install icons are reachable and dimensioned', async ({ page }) => {
+  await page.goto('/');
+  const manifest = await page.evaluate(async () => await fetch('/manifest.webmanifest').then((response) => response.json()));
+  expect(manifest.display).toBe('standalone');
+  expect(manifest.icons).toHaveLength(4);
+  for (const icon of manifest.icons) {
+    const result = await page.evaluate(async ({ src }) => await new Promise<{ ok: boolean; width: number; height: number }>((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve({ ok: true, width: image.naturalWidth, height: image.naturalHeight });
+      image.onerror = () => resolve({ ok: false, width: 0, height: 0 });
+      image.src = src;
+    }), { src: icon.src });
+    const expected = Number(String(icon.sizes).split('x')[0]);
+    expect(result).toEqual({ ok: true, width: expected, height: expected });
+  }
+});

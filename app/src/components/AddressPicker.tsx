@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { CircleCheck, MapPin } from 'lucide-react';
 import { api } from '../api';
 import type { LocationChoice, Locale } from '../types';
-import { BusyButton, createT } from './Shared';
+import { AddressText, BusyButton, createT } from './Shared';
 
 export function AddressPicker({ locale, label, value, onChange, optional = false }: { locale: Locale; label: string; value: LocationChoice | null; onChange: (value: LocationChoice | null) => void; optional?: boolean }) {
   const t = createT(locale);
@@ -28,7 +28,7 @@ export function AddressPicker({ locale, label, value, onChange, optional = false
 
   return <div className="address-picker">
     <label>{label}<div className="address-search"><input value={query} onChange={(event) => { setQuery(event.target.value); onChange(null); }} placeholder={t('addressPlaceholder')} autoComplete="street-address" /><BusyButton busy={busy} type="button" onClick={search} disabled={query.trim().length < 5}>{t('searchAddress')}</BusyButton></div></label>
-    {value && <div className="selected-address"><CircleCheck aria-hidden="true" /> <span>{value.displayAddress}</span></div>}
+    {value && <div className="selected-address"><CircleCheck aria-hidden="true" /><AddressText address={value.displayAddress} /></div>}
     {results.length > 0 && <div className="address-results" role="listbox" aria-label={t('chooseAddress')}>{results.map((result) => <button type="button" key={`${result.provider}:${result.reference}:${result.displayAddress}`} onClick={() => { onChange(result); setQuery(result.displayAddress); setResults([]); }}><MapPin aria-hidden="true" /><span>{result.displayAddress}</span></button>)}</div>}
     {error && <small className="field-error">{error}</small>}
   </div>;

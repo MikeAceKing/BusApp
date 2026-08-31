@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react';
-import { Bus, BusFront, CarFront, CircleUserRound } from 'lucide-react';
+import { Bus, CarFront, CircleUserRound } from 'lucide-react';
 import { api } from '../api';
 import type { LocationChoice, Locale } from '../types';
 import { AddressPicker } from './AddressPicker';
-import { Brand, BusyButton, ErrorBanner, LanguageSwitch, createT } from './Shared';
+import { Brand, BusAvatar, BusyButton, ErrorBanner, LanguageSwitch, createT } from './Shared';
 
 export function BusOnboarding({ locale, onLocale, onCreated, onLogout }: { locale: Locale; onLocale: (locale: Locale) => void; onCreated: () => Promise<void>; onLogout: () => void }) {
   const t = createT(locale);
@@ -30,7 +30,7 @@ export function BusOnboarding({ locale, onLocale, onCreated, onLogout }: { local
     }
   }
 
-  const choices = [{ key: 'bus', label: 'Bus', Icon: BusFront }, { key: 'van', label: 'Van', Icon: CarFront }, { key: 'coach', label: 'Coach', Icon: Bus }] as const;
+  const choices = [{ key: 'bus', label: t('vehicleBus') }, { key: 'van', label: t('vehicleVan') }, { key: 'coach', label: t('vehicleCoach') }] as const;
   return <main className="onboarding-shell">
     <div className="entry-top"><button className="text-button" onClick={onLogout}>{t('logout')}</button><LanguageSwitch locale={locale} onChange={onLocale} /></div>
     <Brand />
@@ -39,7 +39,7 @@ export function BusOnboarding({ locale, onLocale, onCreated, onLogout }: { local
       <ErrorBanner message={error} />
       <form onSubmit={submit}>
         <label>{t('busName')}<input required minLength={2} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <fieldset><legend>{t('avatar')}</legend><div className="avatar-choices">{choices.map(({ key, label, Icon }) => <button type="button" key={key} aria-label={label} aria-pressed={avatar === key} onClick={() => setAvatar(key)}><Icon aria-hidden="true" /></button>)}</div></fieldset>
+        <fieldset><legend>{t('avatar')}</legend><div className="avatar-choices">{choices.map(({ key, label }) => <button type="button" key={key} aria-label={label} aria-pressed={avatar === key} onClick={() => setAvatar(key)}>{key === 'van' ? <CarFront aria-hidden="true" /> : key === 'coach' ? <Bus aria-hidden="true" /> : <BusAvatar kind="bus" size={46} />}</button>)}</div></fieldset>
         <label>{t('capacity')}<input required type="number" min={1} max={120} value={capacity} onChange={(event) => setCapacity(Number(event.target.value))} /></label>
         <AddressPicker locale={locale} label={t('startAddress')} value={start} onChange={setStart} />
         <details><summary>{t('moreOptions')}</summary><AddressPicker optional locale={locale} label={t('endAddress')} value={end} onChange={setEnd} /></details>

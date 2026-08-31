@@ -13,7 +13,11 @@ import { ParentCode } from './components/ParentCode';
 import { StateCard, createT } from './components/Shared';
 
 export default function App() {
-  const [locale, setLocaleState] = useState<Locale>(() => localStorage.getItem('bus-app-locale') === 'fr' ? 'fr' : 'nl');
+  const [locale, setLocaleState] = useState<Locale>(() => {
+    const stored = localStorage.getItem('bus-app-locale');
+    if (stored === 'fr' || stored === 'nl') return stored;
+    return navigator.language.toLowerCase().startsWith('fr') ? 'fr' : 'nl';
+  });
   const [mode, setModeState] = useState<EntryMode | null>(() => {
     const value = localStorage.getItem('bus-app-mode');
     return value === 'BUS' || value === 'PARENT' ? value : null;

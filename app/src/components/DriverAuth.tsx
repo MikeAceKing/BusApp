@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import { ArrowLeft, BusFront } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { supabase } from '../supabase';
 import type { Locale } from '../types';
-import { Brand, BusyButton, LanguageSwitch, createT } from './Shared';
+import { Brand, BusyButton, FriendlyBus, LanguageSwitch, createT } from './Shared';
 
 export function DriverAuth({ locale, onLocale, onBack }: { locale: Locale; onLocale: (locale: Locale) => void; onBack: () => void }) {
   const t = createT(locale);
@@ -34,7 +34,7 @@ export function DriverAuth({ locale, onLocale, onBack }: { locale: Locale; onLoc
     <div className="entry-top"><button className="icon-button" onClick={onBack} aria-label={t('back')} title={t('back')}><ArrowLeft aria-hidden="true" /></button><LanguageSwitch locale={locale} onChange={onLocale} /></div>
     <Brand />
     <section className="auth-card">
-      <span className="auth-role"><BusFront aria-hidden="true" /></span>
+      <span className="auth-role"><FriendlyBus size={58} /></span>
       <h1>{register ? t('register') : t('login')}</h1>
       <p className="muted">{t('busRoleHelp')} · {t('freePromise')}</p>
       <form onSubmit={submit}>

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Bell, BusFront, Flag, LogOut, MapPin, Plus, Route, ShieldCheck, SwitchCamera, TriangleAlert, UserRound, UsersRound } from 'lucide-react';
+import { Bell, BusFront, ChevronDown, ChevronUp, Flag, LogOut, MapPin, Plus, Route, ShieldCheck, SwitchCamera, TriangleAlert, UserRound, UsersRound } from 'lucide-react';
 import { api } from '../api';
 import { busAppApiUrl, busAppPublicKey, supabase } from '../supabase';
 import type { Locale, RoutePlan, SpaceHome, SpaceSummary } from '../types';
-import { BottomNav, BusAvatar, BusyButton, ErrorBanner, PageHeader, StateCard, createT } from './Shared';
+import { AddressText, BottomNav, BusAvatar, BusyButton, CountLabel, ErrorBanner, FriendlyBus, FriendlyRouteIllustration, PageHeader, StateCard, createT } from './Shared';
 import { PassengerManager } from './PassengerManager';
 import { RoutePlanner } from './RoutePlanner';
 import { StopEditor } from './StopEditor';
@@ -16,7 +16,9 @@ export function BusHome({ space, locale, onExit }: { space: SpaceSummary; locale
   const [home, setHome] = useState<SpaceHome | null>(null);
   const [tab, setTab] = useState<BusTab>('bus');
   const [adding, setAdding] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [error, setError] = useState('');
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [tab]);
   const load = useCallback(async () => {
     try { setHome(await api<SpaceHome>(`/spaces/${space.id}/home`)); setError(''); }
     catch (reason) { setError(reason instanceof Error ? reason.message : t('error')); }
@@ -42,16 +44,18 @@ export function BusHome({ space, locale, onExit }: { space: SpaceSummary; locale
       <ErrorBanner message={error} onRetry={load} label={t('retry')} />
       {tab === 'bus' && <>
         <section className="bus-hero">
-          <div className="bus-identity-mark"><BusAvatar kind={home.bus?.avatar_key} size={54} /></div>
+          <div className="friendly-landscape"><i className="friendly-landscape__sun" /><i className="friendly-landscape__cloud friendly-landscape__cloud--one" /><i className="friendly-landscape__cloud friendly-landscape__cloud--two" /><FriendlyBus className="friendly-landscape__bus" size={132} /><span /></div>
+          <small className="eyebrow">{t('today')}</small>
           <h1>{home.bus?.name}</h1>
-          <div className="bus-stats"><span><strong>{home.stops.length}</strong>{t('addresses')}</span><span><strong>{passengerCount}</strong>{t('children')}</span></div>
+          <div className="bus-stats"><span><MapPin aria-hidden="true" /><strong><CountLabel count={home.stops.length} one={t('stopOne')} many={t('stopMany')} /></strong></span><span><UsersRound aria-hidden="true" /><strong><CountLabel count={passengerCount} one={t('passengerOne')} many={t('passengerMany')} /></strong></span></div>
           <div className={`route-state ${home.routePlan ? 'ready' : ''}`}>{home.routePlan ? <Route aria-hidden="true" /> : <MapPin aria-hidden="true" />}<span>{home.routePlan ? (estimate ? t('routeEstimate') : t('routeReady')) : t('routeMissing')}</span></div>
           {capacityExceeded && <div className="capacity-warning"><TriangleAlert aria-hidden="true" />{t('capacityWarning', { count: passengerCount, capacity: home.bus?.capacity || 0 })}</div>}
-          <BusyButton className="primary-button jumbo button-with-icon" onClick={() => setTab('route')}><Route aria-hidden="true" />{home.routePlan ? t('viewRoute') : t('calculateRoute')}</BusyButton>
+          <BusyButton className="primary-button button-with-icon" onClick={() => setTab('route')}><Route aria-hidden="true" />{home.routePlan ? t('viewRoute') : t('calculateRoute')}</BusyButton>
           <button className="add-stop-button button-with-icon" onClick={() => setAdding(true)}><Plus aria-hidden="true" />{t('addAddress')}</button>
-          <details><summary>{t('moreOptions')}</summary><p className="button-with-icon"><MapPin aria-hidden="true" />{home.bus?.start_display_address}</p>{home.bus?.end_display_address && <p className="button-with-icon"><Flag aria-hidden="true" />{home.bus.end_display_address}</p>}</details>
+          <button className="options-toggle" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((current) => !current)}>{optionsOpen ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}{optionsOpen ? t('fewerOptions') : t('moreOptions')}</button>
+          {optionsOpen && <div className="bus-options"><div><MapPin aria-hidden="true" /><AddressText address={home.bus?.start_display_address || ''} /></div>{home.bus?.end_display_address && <div><Flag aria-hidden="true" /><AddressText address={home.bus.end_display_address} /></div>}</div>}
         </section>
-        <div className="stop-overview">{home.stops.map((stop) => <article key={stop.id}><MapPin aria-hidden="true" /><div><strong>{stop.label || stop.display_address.split(',')[0]}</strong><small>{stop.display_address}</small></div><b>{stop.expected_passenger_count}</b></article>)}</div>
+        {home.stops.length ? <div className="stop-overview">{home.stops.map((stop) => <article key={stop.id}><MapPin aria-hidden="true" /><AddressText address={stop.display_address} label={stop.label} /><b>{stop.expected_passenger_count}</b></article>)}</div> : <section className="compact-empty"><FriendlyRouteIllustration /><div><h2>{t('noStops')}</h2><p>{t('noStopsHelp')}</p></div><button className="secondary-button button-with-icon" onClick={() => setAdding(true)}><Plus aria-hidden="true" />{t('addAddress')}</button></section>}
       </>}
       {tab === 'route' && <RoutePlanner home={home} locale={locale} onChanged={load} onStart={start} />}
       {tab === 'passengers' && <PassengerManager home={home} locale={locale} onChanged={load} />}
@@ -86,10 +90,11 @@ function Profile({ home, locale }: { home: SpaceHome; locale: Locale }) {
     } catch (reason) { setError(reason instanceof Error ? reason.message : t('error')); }
   }
   return <section className="profile-page">
-    <StateCard icon={BusFront} title={home.space.name} body={`${home.members.length} ${t('members')} · ${home.space.default_language.toUpperCase()}`} />
+    <header className="section-heading"><div><small>BusApp</small><h1>{t('profile')}</h1></div></header>
+    <section className="profile-identity"><span className="profile-identity__bus"><FriendlyBus size={74} /></span><div><h2>{home.space.name}</h2><p><CountLabel count={home.members.length} one={t('memberOne')} many={t('memberMany')} /> · {home.space.default_language === 'fr' ? t('languageFrench') : t('languageDutch')}</p></div></section>
     <ErrorBanner message={error} />
-    <button className="secondary-button jumbo button-with-icon" onClick={enable}><Bell aria-hidden="true" />{push ? t('pushEnabled') : t('enablePush')}</button>
-    <aside className="privacy-note"><ShieldCheck aria-hidden="true" /><span><strong>{t('privacyTitle')}</strong><small>{t('privacyBody')}</small></span></aside>
+    <button className="secondary-button button-with-icon" onClick={enable}><Bell aria-hidden="true" />{push ? t('pushEnabled') : t('enablePush')}</button>
+    <h2 className="subsection-title">{t('privacy')}</h2><aside className="privacy-note"><ShieldCheck aria-hidden="true" /><span><strong>{t('privacyTitle')}</strong><small>{t('privacyBody')}</small></span></aside>
     <button className="danger-link logout-button button-with-icon" onClick={() => supabase.auth.signOut()}><LogOut aria-hidden="true" />{t('logout')}</button>
   </section>;
 }

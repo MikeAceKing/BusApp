@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BusFront, CircleCheck, CircleX, MapPin, Navigation, Play, ShieldCheck, Square, Wifi, WifiOff } from 'lucide-react';
+import { CircleCheck, CircleX, MapPin, Navigation, Play, ShieldCheck, Square, Wifi, WifiOff } from 'lucide-react';
 import { api } from '../api';
 import type { Locale, TripPassenger, TripRuntimeResponse } from '../types';
-import { BusyButton, ErrorBanner, InitialAvatar, createT } from './Shared';
+import { AddressText, BusyButton, ErrorBanner, FriendlyBus, InitialAvatar, createT } from './Shared';
 
 const queueKey = 'bus-app-v2-pending-actions';
 type Queued = { id: string; path: string; body: Record<string, unknown> };
@@ -59,7 +59,7 @@ export function TripRuntime({ spaceId, locale, onFinished }: { spaceId: string; 
     <div className={`runtime-connection ${online ? 'online' : 'offline'}`}>{online ? <Wifi aria-hidden="true" /> : <WifiOff aria-hidden="true" />}<span>{online ? t('gpsActive') : t('offline')}</span></div>
     <ErrorBanner message={error} />{gps && <div className="warning-banner"><Navigation aria-hidden="true" />{gps}</div>}
     <TripProgress stops={trip.stops} label={t('tripProgress')} />
-    <header className="next-stop-card"><small>{t('nextStop')}</small><h1>{trip.nextStop?.display_address || '—'}</h1><div><strong>{trip.nextStop?.expected_passenger_count || 0}</strong><span>{t('expectedAtStop')}</span></div></header>
+    <header className="next-stop-card"><small>{t('nextStop')}</small><h1>{trip.nextStop ? <AddressText address={trip.nextStop.display_address} /> : '—'}</h1><div><strong>{trip.nextStop?.expected_passenger_count || 0}</strong><span>{t('expectedAtStop')}</span></div></header>
     {canAttend && <div className="runtime-passengers">{trip.passengers.map((passenger) => <PassengerAttendance key={passenger.passenger_id} passenger={passenger} disabled={Boolean(busy)} locale={locale} onStatus={(status) => action(`/trips/${trip.id}/attendance`, { passengerId: passenger.passenger_id, status, expectedVersion: passenger.version }, passenger.passenger_id, true)} />)}</div>}
     {trip.nextStop && <div className="stop-actions"><BusyButton busy={busy === 'approach'} onClick={() => action(`/trips/${trip.id}/stops/${trip.nextStop!.id}`, { action: 'APPROACH' }, 'approach')}><Navigation aria-hidden="true" />{t('approaching')}</BusyButton><BusyButton busy={busy === 'arrive-stop'} onClick={() => action(`/trips/${trip.id}/stops/${trip.nextStop!.id}`, { action: trip.nextStop!.status === 'AT_STOP' ? 'COMPLETE' : 'ARRIVE' }, 'arrive-stop')}>{trip.nextStop.status === 'AT_STOP' ? <CircleCheck aria-hidden="true" /> : <MapPin aria-hidden="true" />}{trip.nextStop.status === 'AT_STOP' ? t('stopComplete') : t('arrive')}</BusyButton></div>}
     <div className="trip-main-action">
@@ -68,12 +68,12 @@ export function TripRuntime({ spaceId, locale, onFinished }: { spaceId: string; 
       {trip.status === 'ARRIVED' && <BusyButton busy={busy === 'transition'} className="primary-button jumbo button-with-icon" onClick={async () => { await action(`/trips/${trip.id}/transition`, { transition: 'COMPLETE' }, 'transition'); await onFinished(); }}><Square aria-hidden="true" />{t('complete')}</BusyButton>}
       <button className="danger-link" onClick={async () => { if (confirm(t('cancel'))) { await action(`/trips/${trip.id}/transition`, { transition: 'CANCEL' }, 'cancel'); await onFinished(); } }}>{t('cancel')}</button>
     </div>
-    <p className="safety-copy"><ShieldCheck aria-hidden="true" />{t('driverSafety')}</p>
+    <p className="safety-copy"><ShieldCheck aria-hidden="true" /><span>{t('driverSafety')}</span></p>
   </section>;
 }
 
 function TripProgress({ stops, label }: { stops: NonNullable<TripRuntimeResponse['trip']>['stops']; label: string }) {
-  return <section className="trip-progress" aria-label={label}><BusFront aria-hidden="true" /><div>{stops.map((stop) => <span key={stop.id} className={`trip-progress__stop trip-progress__stop--${stop.status.toLowerCase()}`} title={stop.display_address}><i /><small>{stop.sequence}</small></span>)}</div></section>;
+  return <section className="trip-progress" aria-label={label}><FriendlyBus className="trip-progress__bus" size={48} /><div>{stops.map((stop) => <span key={stop.id} className={`trip-progress__stop trip-progress__stop--${stop.status.toLowerCase()}`} title={stop.display_address}><i /><small>{stop.sequence}</small></span>)}</div></section>;
 }
 
 function PassengerAttendance({ passenger, disabled, locale, onStatus }: { passenger: TripPassenger; disabled: boolean; locale: Locale; onStatus: (status: 'BOARDED' | 'MISSED' | 'DROPPED_OFF') => void }) {

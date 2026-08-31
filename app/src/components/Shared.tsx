@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Bus, BusFront, CircleAlert, MapPinned } from 'lucide-react';
+import { CircleAlert, MapPin, MapPinned } from 'lucide-react';
 import { translate, type TranslationKey } from '../i18n';
 import type { AvatarStyle, Locale } from '../types';
 
@@ -19,8 +19,21 @@ export function Brand({ compact = false }: { compact?: boolean }) {
 }
 
 export function BusAvatar({ kind = 'bus', size = 24 }: { kind?: string | null; size?: number }) {
-  const Icon = kind === 'coach' ? Bus : BusFront;
-  return <Icon size={size} strokeWidth={2.2} aria-hidden="true" />;
+  return <FriendlyBus className={`friendly-bus friendly-bus--${kind || 'bus'}`} size={size} />;
+}
+
+export function FriendlyBus({ size = 120, className = 'friendly-bus' }: { size?: number; className?: string }) {
+  return <svg className={className} width={size} height={Math.round(size * .68)} viewBox="0 0 180 122" aria-hidden="true">
+    <path d="M28 26c1-10 9-17 19-18h75c18 0 31 10 35 27l8 39v17c0 7-5 12-12 12h-4a20 20 0 0 1-39 0H69a20 20 0 0 1-39 0h-5c-7 0-12-5-12-12V47c0-12 5-19 15-21Z" fill="currentColor" />
+    <path d="M39 20h79c12 0 20 6 24 18l4 20H31V33c0-7 3-11 8-13Z" fill="#fff8dd" />
+    <path d="M40 28h27v22H36V35c0-4 1-6 4-7Zm36 0h29v22H76V28Zm38 0h5c8 0 13 4 16 12l3 10h-24V28Z" fill="#9fe3f5" />
+    <path d="M14 66h151v25c0 7-5 12-12 12H25c-7 0-11-5-11-12V66Z" fill="#ffc83d" />
+    <path d="M25 73h128" stroke="#173f53" strokeWidth="5" strokeLinecap="round" opacity=".18" />
+    <rect x="20" y="76" width="11" height="8" rx="4" fill="#fff" />
+    <rect x="148" y="76" width="11" height="8" rx="4" fill="#f46d70" />
+    <circle cx="50" cy="101" r="15" fill="#173f53" /><circle cx="50" cy="101" r="6" fill="#dcecf1" />
+    <circle cx="129" cy="101" r="15" fill="#173f53" /><circle cx="129" cy="101" r="6" fill="#dcecf1" />
+  </svg>;
 }
 
 export function LanguageSwitch({ locale, onChange }: { locale: Locale; onChange: (locale: Locale) => void }) {
@@ -68,6 +81,40 @@ export function normalizeAvatarStyle(value?: string | null): AvatarStyle {
 export function InitialAvatar({ name, avatar = 'initials-blue' }: { name: string; avatar?: string }) {
   const initials = name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toLocaleUpperCase() || 'BA';
   return <span className={`avatar avatar--${normalizeAvatarStyle(avatar)}`} aria-label={name}>{initials}</span>;
+}
+
+export type PresentedAddress = { primary: string; secondary: string; full: string };
+export function formatBelgianAddress(fullAddress: string, preferredLabel?: string | null): PresentedAddress {
+  const full = fullAddress.trim();
+  const parts = full.split(',').map((part) => part.trim()).filter(Boolean);
+  const postcodeMatch = full.match(/\b([1-9]\d{3})\b/);
+  const postcode = postcodeMatch?.[1] || '';
+  let primary = preferredLabel?.trim() || parts[0] || full;
+  if (!preferredLabel && /^\d+[a-zA-Z]?$/.test(parts[0] || '') && parts[1]) primary = `${parts[1]} ${parts[0]}`;
+  const postcodePart = parts.find((part) => part.includes(postcode)) || '';
+  let city = postcodePart.replace(postcode, '').trim();
+  if (!city && postcode) {
+    const postcodeIndex = parts.findIndex((part) => part.includes(postcode));
+    const candidates = parts.slice(1, postcodeIndex).filter((part) => !/belgi|belgique|belgië|vlaanderen|wallonie|brussel-hoofdstad|bruxelles-capitale/i.test(part));
+    city = candidates[candidates.length - 1] || '';
+  }
+  return { primary, secondary: [postcode, city].filter(Boolean).join(' '), full };
+}
+
+export function AddressText({ address, label, compact = false }: { address: string; label?: string | null; compact?: boolean }) {
+  const presented = formatBelgianAddress(address, label);
+  return <span className={`address-text ${compact ? 'address-text--compact' : ''}`} title={presented.full}>
+    <strong>{presented.primary}</strong>
+    {presented.secondary && <small>{presented.secondary}</small>}
+  </span>;
+}
+
+export function CountLabel({ count, one, many }: { count: number; one: string; many: string }) {
+  return <>{count} {count === 1 ? one : many}</>;
+}
+
+export function FriendlyRouteIllustration() {
+  return <div className="friendly-route-illustration" aria-hidden="true"><BusAvatar size={66} /><span className="friendly-route-illustration__path" /><MapPin /></div>;
 }
 
 export function HonestMapState({ title, body }: { title: string; body: string }) {

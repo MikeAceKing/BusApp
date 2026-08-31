@@ -1,6 +1,6 @@
-import { BusFront, ChevronRight, UsersRound } from 'lucide-react';
+import { ChevronRight, UsersRound } from 'lucide-react';
 import type { EntryMode, Locale } from '../types';
-import { Brand, LanguageSwitch, createT } from './Shared';
+import { Brand, FriendlyBus, LanguageSwitch, createT } from './Shared';
 
 export function EntryScreen({ locale, onLocale, onSelect }: { locale: Locale; onLocale: (locale: Locale) => void; onSelect: (mode: EntryMode) => void }) {
   const t = createT(locale);
@@ -9,7 +9,7 @@ export function EntryScreen({ locale, onLocale, onSelect }: { locale: Locale; on
     <section className="entry-intro"><Brand /><h1>{t('welcome')}</h1><p>{t('question')}</p></section>
     <div className="role-grid">
       <button className="role-card role-card--bus" onClick={() => onSelect('BUS')}>
-        <span className="role-card__icon"><BusFront aria-hidden="true" /></span>
+        <span className="role-card__icon"><FriendlyBus size={48} /></span>
         <span><strong>{t('busRole')}</strong><small>{t('busRoleHelp')}</small></span>
         <ChevronRight aria-hidden="true" />
       </button>
