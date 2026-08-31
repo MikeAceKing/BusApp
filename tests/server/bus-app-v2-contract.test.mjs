@@ -280,6 +280,53 @@ test('one canonical passenger avatar is shared by parents and bus staff', () => 
   assert.match(media, /const recipients = await pulseRecipients\(target\)/);
 });
 
+test('parent arrival estimates follow real progress instead of the departure schedule', () => {
+  // The anchor is the last stop the bus actually served, not started_at, so a delay earlier
+  // in the route does not silently expire the estimate of a parent further down the line.
+  assert.match(server, /const servedStops=progressStops\.filter\(\(item\)=>\['COMPLETED','SKIPPED'\]\.includes\(text\(item\.status\)\)&&text\(item\.completed_at\)\)/);
+  assert.match(server, /const anchorAt=anchorStop\?Date\.parse\(text\(anchorStop\.completed_at\)\):Date\.parse\(text\(trip\.data\?\.started_at\)\)/);
+  assert.match(server, /const anchorOffset=anchorStop\?numberValue\(anchorStop\.estimated_arrival_offset_seconds\):0/);
+  // Only the travel still ahead of the anchor is counted.
+  assert.match(server, /const remainingSeconds=tripStop\?Math\.max\(0,numberValue\(tripStop\.estimated_arrival_offset_seconds\)-anchorOffset\):0/);
+  // The old formula counted down from departure and clamped at zero; it must not return.
+  assert.doesNotMatch(server, /Math\.max\(0,Math\.ceil\(\(Date\.parse\(text\(trip\.data\.started_at\)\)\+numberValue\(tripStop\.estimated_arrival_offset_seconds\)/);
+});
+
+test('an expired estimate with stops still ahead reports unknown, not arrival', () => {
+  // Reporting 0 while the bus is several stops away would read as "almost there".
+  assert.match(server, /const eta=rawEta===null\?null:rawEta>0\?rawEta:\(stopsAway\|\|0\)>0\?null:0/);
+  // The interface must not claim arrival from a number alone.
+  assert.match(parentHome, /typeof passenger\?\.etaMinutes === 'number' && passenger\.etaMinutes <= 5 && \(passenger\.stopsAway \?\? 0\) === 0 \? t\('almostThere'\)/);
+  // An active trip with an unknown estimate must not fall through to "not running".
+  assert.match(parentHome, /\{data\.trip \? <div className="parent-eta">/);
+  assert.match(parentHome, /t\('etaUnknown'\)/);
+});
+
+test('a parent learns how far away the bus is, without learning about other stops', () => {
+  // Stops still to be served before this parent's own stop.
+  assert.match(server, /const stopsAway=tripStop\?progressStops\.filter\(\(item\)=>numberValue\(item\.sequence\)<mySequence&&!\['COMPLETED','SKIPPED'\]\.includes\(text\(item\.status\)\)\)\.length:null/);
+  // The progress query is server-side only: it selects no address, label or passenger, and
+  // only the count reaches the parent.
+  assert.match(server, /db\.from\('bus_app_trip_stops'\)\.select\('sequence,status,completed_at,estimated_arrival_offset_seconds'\)\.eq\('trip_id',trip\.data\.id\)\.order\('sequence'\)/);
+  for (const forbidden of [/progressStops[^;]{0,120}display_address/, /progressStops[^;]{0,120}source_stop_id/]) {
+    assert.doesNotMatch(server, forbidden);
+  }
+});
+
+test('serving a stop pushes a realtime pulse to the affected parents', () => {
+  // Previously only GPS updates pulsed parents, so with location off a parent saw nothing
+  // until the next poll, even as the bus worked through the route.
+  const handler = server.match(/app\.post\('\/trips\/:tripId\/stops\/:tripStopId'[\s\S]*?\}catch\(error\)\{return handleError\(c,error\);\}\}\);/)?.[0] || '';
+  assert.ok(handler);
+  assert.match(handler, /\['APPROACH','COMPLETE','SKIP'\]\.includes\(parsed\.data\.action\)/);
+  assert.match(handler, /parentRecipientsForPassengers/);
+  assert.match(handler, /event_type:'STOP_PROGRESS'/);
+  // The pulse is best-effort: a failure here must not undo a completed stop.
+  assert.match(handler, /catch\(reason\)\{console\.error\('\[bus-app\] parent stop pulse failed after a successful stop update',reason\);\}/);
+  // The parent client already listens for these rows.
+  assert.match(parentHome, /table: 'bus_app_parent_trip_updates', filter: `user_id=eq\.\$\{userData\.user\.id\}`/);
+});
+
 test('Edge sources are syntactically valid TypeScript', () => {
   for (const [name, source] of [['index.ts', server], ['schemas.ts', schemas], ['routing.ts', routing], ['notifications.ts', notifications], ['media-index.ts', media], ['image-core.ts', mediaImage], ['image.ts', mediaRuntime]]) {
     const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }, reportDiagnostics: true, fileName: name });

@@ -52,7 +52,7 @@ export function ParentBusHome({ grantId, locale, onLocale, onExit, onGrantLost }
   if (!data) return <main className="app-shell"><ErrorBanner message={error} onRetry={load} label={t('retry')} /></main>;
   const passenger = data.passengers[0];
   const passengerStatus = (status: string) => status === 'BOARDED' ? t('onBus') : status === 'MISSED' ? t('missed') : status === 'DROPPED_OFF' ? t('dropped') : t('expected');
-  const tripStatus = data.trip?.status === 'IN_TRANSIT' ? (passenger?.etaMinutes !== null && Number(passenger?.etaMinutes) <= 5 ? t('almostThere') : t('onWay')) : data.trip?.status === 'ARRIVED' ? t('arrived') : data.trip?.status === 'BOARDING' ? t('boarding') : t('noActiveTrip');
+  const tripStatus = data.trip?.status === 'IN_TRANSIT' ? (typeof passenger?.etaMinutes === 'number' && passenger.etaMinutes <= 5 && (passenger.stopsAway ?? 0) === 0 ? t('almostThere') : t('onWay')) : data.trip?.status === 'ARRIVED' ? t('arrived') : data.trip?.status === 'BOARDING' ? t('boarding') : t('noActiveTrip');
 
   return <main className="app-shell parent-home">
     <div className="page-content">
@@ -63,7 +63,12 @@ export function ParentBusHome({ grantId, locale, onLocale, onExit, onGrantLost }
         <section className="parent-hello"><p>{t('hello')} {data.parent.displayName}</p>{data.passengers.map((item) => <div key={item.id}><AvatarDisplay kind="child" avatar={item.avatar} name={item.display_name}/><strong>{item.display_name}</strong></div>)}</section>
         <section className="parent-journey">
           <header><span className={`live-dot ${data.trip?.status === 'IN_TRANSIT' ? 'active' : ''}`}><Circle aria-hidden="true" />{tripStatus}</span><FriendlyBus size={82} /></header>
-          {data.trip && passenger?.etaMinutes !== null ? <div className="parent-eta"><small>{t('approximately')}</small><strong>{passenger?.etaMinutes} {t('minutes')}</strong></div> : <p className="no-trip-copy">{t('noActiveTrip')}</p>}
+          {data.trip ? <div className="parent-eta">
+            {passenger?.etaMinutes !== null && passenger?.etaMinutes !== undefined
+              ? <><small>{t('approximately')}</small><strong>{passenger.etaMinutes} {t('minutes')}</strong></>
+              : <strong className="parent-eta__unknown">{t('etaUnknown')}</strong>}
+            {typeof passenger?.stopsAway === 'number' && <span className="parent-eta__stops">{passenger.stopsAway === 0 ? t('stopsAwayNone') : passenger.stopsAway === 1 ? t('stopsAwayOne') : t('stopsAwayMany', { count: passenger.stopsAway })}</span>}
+          </div> : <p className="no-trip-copy">{t('noActiveTrip')}</p>}
           <div className="own-stop"><MapPin aria-hidden="true" /><div><small>{t('yourStop')}</small>{passenger?.stop ? <AddressText address={passenger.stop.display_address} /> : <strong>—</strong>}</div></div>
         </section>
         {data.passengers.map((item) => <section className="parent-passenger-status" key={item.id}><AvatarDisplay kind="child" avatar={item.avatar} name={item.display_name}/><span><strong>{item.display_name}</strong><small>{passengerStatus(item.status)}</small></span><b className={`status-tag status-${item.status.toLowerCase()}`}>{item.status === 'BOARDED' || item.status === 'DROPPED_OFF' ? <CircleCheck aria-hidden="true" /> : <Circle aria-hidden="true" />}</b></section>)}

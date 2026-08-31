@@ -378,3 +378,5 @@ svg { flex: 0 0 auto; }
 .public-more:hover, .public-more:focus-visible { text-decoration: underline; }
 .public-intro__bar nav a[aria-current='page'] { text-decoration: underline; text-underline-offset: 4px; }
 .public-section h1 { margin: 20px 0 8px; font-size: clamp(24px, 6vw, 32px); letter-spacing: -.02em; }
+.parent-eta__stops { display: block; margin-top: 4px; color: #3e7562; font-size: 13px; font-weight: 600; }
+.parent-eta__unknown { display: block; color: #4c6a7a; font-size: 17px; }
