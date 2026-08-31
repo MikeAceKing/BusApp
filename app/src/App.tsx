@@ -8,6 +8,7 @@ import { BusHome } from './components/BusHome';
 import { BusOnboarding } from './components/BusOnboarding';
 import { DriverAuth } from './components/DriverAuth';
 import { EntryScreen } from './components/EntryScreen';
+import { PublicIntro } from './components/PublicIntro';
 import { ParentBusHome } from './components/ParentBusHome';
 import { ParentCode } from './components/ParentCode';
 import { StateCard, createT } from './components/Shared';
@@ -22,6 +23,10 @@ export default function App() {
     const value = localStorage.getItem('bus-app-mode');
     return value === 'BUS' || value === 'PARENT' ? value : null;
   });
+  // A first-time visitor gets the public introduction. Once someone has chosen an access
+  // route, switching access returns them to the compact picker instead of the marketing
+  // page, and an authenticated session skips both entirely.
+  const [introSeen, setIntroSeen] = useState(() => localStorage.getItem('bus-app-intro-seen') === '1');
   const [session, setSession] = useState<Session | null>(null);
   const [context, setContext] = useState<ContextResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,6 +49,14 @@ export default function App() {
     else localStorage.removeItem('bus-app-mode');
     setModeState(value);
     setError('');
+  };
+  const chooseFromIntro = (value: EntryMode) => {
+    localStorage.setItem('bus-app-intro-seen', '1');
+    setIntroSeen(true);
+    // Leaving a public page for the app runtime resets the URL, so a later reload does not
+    // land the authenticated app on a marketing path.
+    if (window.location.pathname !== '/') window.history.replaceState({}, '', '/');
+    setMode(value);
   };
   const loadContext = useCallback(async () => {
     const current = await supabase.auth.getSession();
@@ -76,6 +89,7 @@ export default function App() {
   }, [loadContext, session]);
 
   if (loading) return <main className="app-shell"><StateCard icon={LoaderCircle} title={t('loading')} /></main>;
+  if (!mode && !introSeen && !session) return <PublicIntro locale={locale} onLocale={setLocale} onSelect={chooseFromIntro} />;
   if (!mode) return <EntryScreen locale={locale} onLocale={setLocale} onSelect={setMode} />;
 
   const exit = () => setMode(null);

@@ -145,7 +145,7 @@ for (const locale of ['nl', 'fr'] as const) {
   for (const viewport of viewports) {
     test(`${locale} entry ${viewport.width}x${viewport.height}`, async ({ page }) => {
       await page.setViewportSize(viewport);
-      await page.addInitScript((language) => { localStorage.clear(); localStorage.setItem('bus-app-locale', language); }, locale);
+      await page.addInitScript((language) => { localStorage.clear(); localStorage.setItem('bus-app-locale', language); localStorage.setItem('bus-app-intro-seen', '1'); }, locale);
       await page.goto('/');
       await expect(page.getByText(locale === 'fr' ? 'Pourquoi êtes-vous ici ?' : 'Waarvoor kom je?')).toBeVisible();
       await expect(page.getByRole('button', { name: new RegExp(locale === 'fr' ? 'JE SUIS PARENT' : 'IK BEN OUDER', 'i') })).toBeVisible();
@@ -222,6 +222,7 @@ test('browser language is used only when no preference was stored', async ({ pag
       localStorage.clear();
       sessionStorage.setItem('language-test-ready', '1');
     }
+    localStorage.setItem('bus-app-intro-seen', '1');
     Object.defineProperty(navigator, 'language', { configurable: true, value: 'fr-BE' });
   });
   await page.goto('/');
@@ -233,7 +234,7 @@ test('browser language is used only when no preference was stored', async ({ pag
 
 test('landscape and 200 percent inherited text do not overflow', async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
-  await page.addInitScript(() => localStorage.clear());
+  await page.addInitScript(() => { localStorage.clear(); localStorage.setItem('bus-app-intro-seen', '1'); });
   await page.goto('/');
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
   await expect(page.getByText('Waarvoor kom je?')).toBeVisible();
@@ -415,4 +416,167 @@ test('landscape and 200 percent text keep the map usable', async ({ page }) => {
   await expect(page.getByText('Route-inschatting')).toBeVisible();
   await geometry(page);
   await page.screenshot({ path: `${artifacts}/route-map-landscape-200.png`, fullPage: true });
+});
+
+// The public introduction must work with no session and no stored preference at all.
+async function freshVisitor(page: Page, language?: 'nl' | 'fr') {
+  await page.addInitScript((lang) => {
+    localStorage.clear();
+    if (lang) localStorage.setItem('bus-app-locale', lang);
+  }, language || null);
+}
+
+for (const locale of ['nl', 'fr'] as const) {
+  test(`${locale} public introduction explains BusApp before any account`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await freshVisitor(page, locale);
+    await page.goto('/');
+
+    // Purpose is stated in the first screen, without a login wall.
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(locale === 'fr' ? "L'application de bus gratuite" : 'De gratis busapp');
+    // The central trust promise is visible.
+    await expect(page.getByRole('heading', { name: locale === 'fr' ? 'Suivez le bus, pas les enfants.' : 'Volg de bus, niet de kinderen.' })).toBeVisible();
+    // Both journeys are offered and kept separate.
+    await expect(page.getByRole('button', { name: locale === 'fr' ? 'Commencer gratuitement' : 'Gratis starten' }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: locale === 'fr' ? 'Je suis parent' : 'Ik ben ouder' }).first()).toBeVisible();
+    // The landing stays short: the detail lives on its own pages.
+    await expect(page.locator('.public-shot img')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: locale === 'fr' ? 'Ouvrir le guide' : 'Handleiding openen' })).toHaveCount(0);
+
+    // Each public page is reachable from the navigation.
+    for (const [href, heading] of [
+      ['/how', locale === 'fr' ? 'Comment ça marche ?' : 'Hoe werkt het?'],
+      ['/parents', locale === 'fr' ? 'Pour les parents' : 'Voor ouders'],
+      ['/privacy', locale === 'fr' ? 'La confidentialité dès la conception' : 'Privacy vanaf het ontwerp'],
+      ['/help', locale === 'fr' ? "Besoin d'aide ?" : 'Hulp nodig?'],
+    ] as const) {
+      await page.goto(href);
+      await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
+      await geometry(page);
+    }
+
+    // The guide page carries the PDF link and the full screenshot journey.
+    await page.goto('/help');
+    const guide = page.getByRole('link', { name: locale === 'fr' ? 'Ouvrir le guide' : 'Handleiding openen' });
+    await expect(guide).toHaveAttribute('href', '/docs/BusApp_Registratie_Eerste_Stappen.pdf');
+    await expect(guide).toHaveAttribute('target', '_blank');
+    await expect(guide).toHaveAttribute('rel', /noopener/);
+    const shots = page.locator('.public-shot img');
+    await expect(shots).toHaveCount(10);
+    const broken = await page.evaluate(async () => {
+      const images = [...document.querySelectorAll('.public-shot img')] as HTMLImageElement[];
+      const results = await Promise.all(images.map((image) => new Promise<boolean>((resolve) => {
+        const probe = new Image();
+        probe.onload = () => resolve(probe.naturalWidth > 0);
+        probe.onerror = () => resolve(false);
+        probe.src = image.src;
+      })));
+      return results.filter((ok) => !ok).length;
+    });
+    expect(broken, 'no screenshot may be broken').toBe(0);
+    // Every screenshot carries meaningful alt text.
+    const missingAlt = await page.evaluate(() => [...document.querySelectorAll('.public-shot img')].filter((image) => (image.getAttribute('alt') || '').trim().length < 15).length);
+    expect(missingAlt).toBe(0);
+
+    await geometry(page);
+    await page.screenshot({ path: `${artifacts}/public-intro-${locale}-390x844.png`, fullPage: true });
+  });
+}
+
+test('public introduction routes into the existing staff and parent flows', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await freshVisitor(page, 'nl');
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Gratis starten' }).first().click();
+  await expect(page.getByText('Gratis registreren').first()).toBeVisible();
+
+  await freshVisitor(page, 'nl');
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Ik ben ouder' }).first().click();
+  await expect(page.getByText('Buscode').first()).toBeVisible();
+});
+
+test('a returning visitor and an authenticated user skip the introduction', async ({ page }) => {
+  // Someone who already chose an access route goes to the compact picker, not marketing.
+  await page.addInitScript(() => { localStorage.clear(); localStorage.setItem('bus-app-intro-seen', '1'); });
+  await page.goto('/');
+  await expect(page.getByText('Waarvoor kom je?')).toBeVisible();
+  await expect(page.locator('.public-intro')).toHaveCount(0);
+
+  // An authenticated staff session opens BusApp directly.
+  await seed(page, 'BUS', 'nl');
+  await mockApi(page, { locale: 'nl' });
+  await page.goto('/');
+  await expect(page.locator('.public-intro')).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'BusApp' })).toBeVisible();
+});
+
+test('the public introduction loads no map or routing code', async ({ page }) => {
+  const requested: string[] = [];
+  page.on('request', (request) => requested.push(request.url()));
+  await freshVisitor(page, 'nl');
+  await page.goto('/');
+  await expect(page.locator('.public-intro')).toBeVisible();
+  // MapLibre is ~1 MB and has no place on a marketing page.
+  expect(requested.filter((url) => /BusMap-|maplibre/i.test(url)), 'landing must not fetch the map chunk').toEqual([]);
+  expect(requested.filter((url) => url.includes('tiles.openfreemap.org')), 'landing must not fetch tiles').toEqual([]);
+});
+
+test('the public introduction fits every supported viewport', async ({ page }) => {
+  await freshVisitor(page, 'nl');
+  for (const viewport of [{ width: 320, height: 800 }, { width: 360, height: 800 }, { width: 390, height: 844 }, { width: 412, height: 915 }, { width: 430, height: 932 }, { width: 768, height: 1024 }, { width: 820, height: 1180 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    await expect(page.locator('.public-hero h1')).toBeVisible();
+    await geometry(page);
+    await page.goto('/help');
+    await expect(page.locator('.public-shot img').first()).toBeVisible();
+    await geometry(page);
+  }
+  // Landscape and 200% inherited text must not break the layout either.
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto('/');
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+  await expect(page.locator('.public-hero h1')).toBeVisible();
+  await geometry(page);
+});
+
+test('public copy claims nothing the product does not do', async ({ page }) => {
+  for (const locale of ['nl', 'fr'] as const) {
+    await freshVisitor(page, locale);
+    let text = '';
+    for (const path of ['/', '/how', '/parents', '/privacy', '/help']) {
+      await page.goto(path);
+      text += ' ' + (await page.locator('.public-intro').innerText()).toLowerCase();
+    }
+    // Routing still runs on the local estimate, so no road-navigation claim may appear.
+    for (const forbidden of ['exacte route', 'itinéraire exact', 'live traffic', 'verkeersinformatie', 'google maps', 'turn-by-turn', 'navigatie', 'unlimited', 'onbeperkt', 'illimité', '100% gdpr', 'gdpr compliant']) {
+      expect(text, `"${forbidden}" must not appear in the ${locale} landing`).not.toContain(forbidden);
+    }
+    // No invented social proof.
+    for (const forbidden of ['scholen gebruiken', 'écoles utilisent', 'gebruikers vertrouwen', 'testimonial']) {
+      expect(text).not.toContain(forbidden);
+    }
+  }
+});
+
+test('every public page loads directly from its own URL', async ({ page }) => {
+  await freshVisitor(page, 'nl');
+  for (const path of ['/', '/how', '/parents', '/privacy', '/help']) {
+    await page.goto(path);
+    await expect(page.locator('.public-intro')).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe(path);
+  }
+  // An unknown public path falls back to the landing rather than a blank screen.
+  await page.goto('/does-not-exist');
+  await expect(page.locator('.public-hero h1')).toBeVisible();
+});
+
+test('choosing an access route from a sub-page enters the app cleanly', async ({ page }) => {
+  await freshVisitor(page, 'nl');
+  await page.goto('/parents');
+  await page.getByRole('button', { name: 'Ik ben ouder' }).first().click();
+  await expect(page.getByText('Buscode').first()).toBeVisible();
+  // The URL is reset so a reload does not drop the app runtime on a marketing path.
+  expect(new URL(page.url()).pathname).toBe('/');
 });

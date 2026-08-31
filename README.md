@@ -4,6 +4,37 @@ Free, privacy-first bus route companion for Belgium. BusApp lets a driver create
 
 Production: [busapp.wexio.be](https://busapp.wexio.be)
 
+## Public introduction & guide
+
+Visiting BusApp without an account opens a small public site that explains the product
+before anyone registers. It is a set of real pages, not one long scroll:
+
+```text
+/          what BusApp is, the privacy promise, the four steps
+/how       how it works, and what a driver or attendant gets
+/parents   what a parent receives, and what they do not
+/privacy   privacy by design, technical storage, GDPR wording
+/help      the guide, plus the full screenshot walkthrough
+/docs/BusApp_Registratie_Eerste_Stappen.pdf
+```
+
+Everything is complete in Dutch and French, and the language switch works before
+authentication. The public site loads no map and no routing code — MapLibre stays in its
+own lazy chunk that a visitor never fetches.
+
+The screenshots in `app/public/media/guide/` and the guide in `app/public/docs/` are
+approved public product materials: real, unmodified screenshots of the current app showing
+a test account and an empty test bus. They contain no user data, no access codes and no
+tokens. The guide is written in Dutch (the app interface is NL/FR), and the site labels it
+as such rather than implying it is bilingual.
+
+A returning visitor who has already chosen an access route goes straight to the compact
+picker, and an authenticated session — including an installed PWA — opens BusApp directly
+without passing through the public site.
+
+Note: the site currently sends `robots: noindex`. Change that meta tag in `app/index.html`
+to publish it to search engines; the SEO and Open Graph metadata is already in place.
+
 ## Core principles
 
 - Follow the bus, not the child.

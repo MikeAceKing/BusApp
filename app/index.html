@@ -4,12 +4,36 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="theme-color" content="#1686d9" />
-    <meta name="description" content="BusApp berekent routes en laat ouders veilig de bus volgen." />
+    <meta name="description" content="Organiseer haltes en passagiers, bereid je busrit voor en geef ouders veilige toegang tot relevante businformatie. Gratis, in het Nederlands en Frans." />
+    <!-- Indexing stays disabled until the owner decides the app should be publicly
+         discoverable. Change to "index,follow" to publish it to search engines. -->
     <meta name="robots" content="noindex,nofollow,noarchive" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="BusApp" />
+    <meta property="og:title" content="BusApp — Gratis busapp voor chauffeur, begeleider en ouders" />
+    <meta property="og:description" content="Organiseer haltes en passagiers, bereid je busrit voor en geef ouders veilige toegang tot relevante businformatie." />
+    <meta property="og:url" content="https://busapp.wexio.be/" />
+    <meta property="og:image" content="https://busapp.wexio.be/icons/icon-512.png" />
+    <meta property="og:locale" content="nl_BE" />
+    <meta property="og:locale:alternate" content="fr_BE" />
+    <meta name="twitter:card" content="summary" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <title>BusApp</title>
+    <title>BusApp — Gratis busapp voor chauffeur, begeleider en ouders</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "BusApp",
+        "applicationCategory": "TravelApplication",
+        "operatingSystem": "Web, PWA",
+        "url": "https://busapp.wexio.be/",
+        "inLanguage": ["nl-BE", "fr-BE"],
+        "description": "Organiseer haltes en passagiers, bereid je busrit voor en geef ouders veilige toegang tot relevante businformatie.",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
