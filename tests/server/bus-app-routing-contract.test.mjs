@@ -23,11 +23,18 @@ test('the routing provider stays an abstraction with declared capabilities', () 
 
 test('openrouteservice uses current official endpoints and a server-side key', () => {
   // api.openrouteservice.org was deprecated 2026-04-28 and shuts down 2026-09-28.
-  assert.match(routing, /'https:\/\/api\.heigit\.org'/);
+
   assert.doesNotMatch(routing.replace(/\/\/.*$/gm, ''), /api\.openrouteservice\.org/);
-  assert.match(routing, /'\/optimization'/);
+  // The HeiGIT host has no /optimization endpoint, so stop order comes from the matrix.
+  assert.match(routing, /`\/v2\/matrix\/\$\{encodeURIComponent\(orsProfile\(\)\)\}`/);
+  assert.doesNotMatch(routing.replace(/\/\/.*$/gm, ''), /'\/optimization'/);
+  // Ordering runs over real road durations, not straight-line distance.
+  assert.match(routing, /function orderFromMatrix\(durations: number\[\]\[\], stopCount: number, hasEnd: boolean\)/);
+  assert.match(routing, /metrics: \['duration'\]/);
   assert.match(routing, /`\/v2\/directions\/\$\{encodeURIComponent\(orsProfile\(\)\)\}\/geojson`/);
   assert.match(routing, /\/geocode\/search/);
+  // The base URL includes the host's openrouteservice namespace.
+  assert.match(routing, /'https:\/\/api\.heigit\.org\/openrouteservice'/);
   // The base URL stays configurable so infrastructure can move without a rewrite.
   assert.match(routing, /Deno\.env\.get\('OPENROUTESERVICE_BASE_URL'\)/);
   // The key is read from the server environment only, and never prefixed for a bundle.
@@ -77,11 +84,12 @@ test('provider failure falls back to a labelled estimate, never a fake road rout
 test('the external provider receives coordinates only, never a person', () => {
   const order = routing.match(/async function orsOrderStops\([\s\S]*?\n\}/)?.[0] || '';
   assert.ok(order);
-  // Jobs are keyed by an ephemeral positional index, not a passenger or stop identifier.
-  assert.match(order, /jobs: input\.stops\.map\(\(stop, index\) => \(\{ id: index \+ 1, location: \[stop\.longitude, stop\.latitude\] \}\)\)/);
+  // The matrix request carries a bare coordinate list; stops are identified only by their
+  // position in that list, never by a passenger or stop identifier.
+  assert.match(order, /locations: points\.map\(\(point\) => \[point\.longitude, point\.latitude\]\)/);
   // Assert against code only: a comment naming what is excluded is not a leak.
   const orderCode = order.replace(/\/\/.*$/gm, '');
-  const requestBody = orderCode.match(/const body = \{[\s\S]*?\n  \};/)?.[0] || '';
+  const requestBody = orderCode.match(/await orsRequest\([\s\S]*?\n  \}\);/)?.[0] || '';
   assert.ok(requestBody);
   for (const forbidden of [/displayAddress/, /passenger/i, /parent/i, /user/i, /name/i]) {
     assert.doesNotMatch(requestBody, forbidden);
@@ -188,4 +196,12 @@ test('the route plan deselect fix is additive and explains itself', () => {
   assert.doesNotMatch(deselectFix, /\bdrop table\b|\bdelete from\b|\btruncate\b/i);
   // The endpoint no longer swallows a failed deselect into a confusing conflict.
   assert.match(server, /const deselected=await db\.from\('bus_app_route_plans'\)\.update\(\{selected_at:null\}\)[\s\S]{0,120}if\(deselected\.error\)throw deselected\.error;/);
+});
+
+test('road arrival offsets come from real per-leg segment durations', () => {
+  const directions = routing.match(/const directions = await orsRequest\([\s\S]*?\}\);/)?.[0] || '';
+  assert.ok(directions);
+  // instructions:false also strips `segments`, which would silently zero every offset.
+  assert.doesNotMatch(directions, /instructions/);
+  assert.match(routing, /cumulative \+= Math\.round\(Number\(segments\[index\]\?\.duration\) \|\| 0\)/);
 });

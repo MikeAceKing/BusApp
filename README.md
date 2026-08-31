@@ -16,7 +16,7 @@ Audited against production on 2026-08-31.
 | Profiles and private photos | Live |
 | Trips, attendance, bus GPS | Live |
 | Map basemap | Live: MapLibre + OpenFreeMap, no API key |
-| Road routing | **Not activated.** `ROUTING_PROVIDER` is unset, so routing runs on the local heuristic and every distance and duration is shown as an estimate |
+| Road routing | **Live.** openrouteservice on the HeiGIT host returns real road geometry, distance and duration; the local heuristic remains the labelled fallback |
 | Search engine indexing | Enabled for the five public pages, each with its own canonical. The PDF guide is `X-Robots-Tag: noindex` |
 
 Verified in production: 26 `bus_app_*` tables, row level security enabled on all of them,
@@ -25,8 +25,8 @@ three tables readable by a browser at all — `bus_app_parent_trip_updates`,
 `bus_app_notifications` and `bus_app_avatar_updates`, each restricted to `user_id = auth.uid()`.
 The media bucket is private, capped at 5 MiB and limited to `image/webp`.
 
-Because road routing is not activated, the product deliberately does not claim exact routes,
-live traffic or navigation anywhere in its interface. A test enforces that.
+Road routing is active, but the product still does not claim live traffic or turn-by-turn
+navigation, because it provides neither. A test enforces that.
 
 ## Public introduction & guide
 
@@ -153,11 +153,21 @@ server sends no CSP and so cannot catch a regression here.
 The routing layer is provider-based:
 
 - `local` is the current safe fallback. It estimates ordering, distance and duration and is always labelled as an estimate.
-- `openrouteservice` is the intended road provider, on the current HeiGIT host
-  `https://api.heigit.org`. The former `api.openrouteservice.org` was deprecated on
-  2026-04-28, reduced to 10% quota on 2026-08-27 and shuts down on 2026-09-28; existing keys
-  carry over. The base URL stays configurable via `OPENROUTESERVICE_BASE_URL`.
-  The routing API key is server-side only and is never exposed to the browser.
+- `openrouteservice` is the active road provider, on the HeiGIT host at
+  `https://api.heigit.org/openrouteservice`. The former `api.openrouteservice.org` was
+  deprecated on 2026-04-28, reduced to 10% quota on 2026-08-27 and shuts down on 2026-09-28.
+  The base URL stays configurable via `OPENROUTESERVICE_BASE_URL`, and the API key is
+  server-side only — a test scans every built bundle to keep it that way.
+
+  This host serves `/v2/directions` and `/v2/matrix`, but **no `/optimization` endpoint and
+  no `/geocode/search`**. Stop order is therefore derived from a real road *duration matrix*
+  with nearest-neighbour plus 2-opt, then a directions call returns the road geometry,
+  distance, duration and the per-leg segment durations that become stop arrival offsets.
+  Geocoding stays on Nominatim, scoped to Belgium and France.
+
+  One trap worth recording: passing `instructions: false` to the directions endpoint also
+  removes `segments`, which would silently zero every arrival offset. Instructions are left
+  at their default for that reason, and a test asserts it.
 - `osrm` accepts road geometry only when the provider returns actual GeoJSON geometry.
 - `vroom` optimizes stop order. Its waypoint geometry is not presented as a road map.
 
@@ -166,9 +176,9 @@ No simulated grid or invented route polyline is rendered. If road geometry is un
 Relevant Edge Function variables:
 
 ```text
-ROUTING_PROVIDER=local|openrouteservice|osrm|vroom
+ROUTING_PROVIDER=local|openrouteservice|osrm|vroom   # production: openrouteservice
 OPENROUTESERVICE_API_KEY=            # server-side only, never in the browser bundle
-OPENROUTESERVICE_BASE_URL=           # defaults to https://api.heigit.org
+OPENROUTESERVICE_BASE_URL=           # defaults to https://api.heigit.org/openrouteservice
 OPENROUTESERVICE_PROFILE=            # defaults to driving-car
 OPENROUTESERVICE_MAX_WAYPOINTS=      # defaults to the published limit of 50
 OSRM_BASE_URL=
@@ -180,7 +190,9 @@ BUS_APP_GEOCODING_CONTACT=
 ```
 
 Nothing above is required to run BusApp: with no routing variables set the provider
-resolves to `local` and every distance and duration is labelled as an estimate.
+resolves to `local` and every distance and duration is labelled as an estimate. If the
+provider fails, times out or rate-limits, BusApp falls back to that same estimate with a
+classified reason rather than showing a broken or invented route.
 
 ## Privacy model
 

@@ -61,7 +61,9 @@ function envInteger(name: string, fallback: number): number {
 }
 
 export function providerCapabilities(provider: RoutingProviderName): RoutingProviderCapabilities {
-  if (provider === 'openrouteservice') return { maxWaypoints: envInteger('OPENROUTESERVICE_MAX_WAYPOINTS', 50), supportsOptimization: true, supportsMatrix: true, supportsRoadGeometry: true };
+  // The HeiGIT host exposes directions and matrix but no /optimization endpoint, so stop
+  // order is derived from a real road duration matrix instead of a provider solver.
+  if (provider === 'openrouteservice') return { maxWaypoints: envInteger('OPENROUTESERVICE_MAX_WAYPOINTS', 50), supportsOptimization: false, supportsMatrix: true, supportsRoadGeometry: true };
   if (provider === 'osrm') return { maxWaypoints: envInteger('OSRM_MAX_WAYPOINTS', 100), supportsOptimization: true, supportsMatrix: true, supportsRoadGeometry: true };
   if (provider === 'vroom') return { maxWaypoints: envInteger('VROOM_MAX_WAYPOINTS', 100), supportsOptimization: true, supportsMatrix: false, supportsRoadGeometry: false };
   return { maxWaypoints: null, supportsOptimization: true, supportsMatrix: false, supportsRoadGeometry: false };
@@ -274,7 +276,7 @@ async function vroomOptimize(input: RouteInput): Promise<RouteResult> {
 // with full quota on the new host. Endpoints: POST /optimization for stop ordering
 // (VROOM-backed) and POST /v2/directions/{profile}/geojson for real road geometry.
 // The key is read from the server environment and never leaves the Edge function.
-function orsBase(): string { return String(Deno.env.get('OPENROUTESERVICE_BASE_URL') || 'https://api.heigit.org').replace(/\/$/, ''); }
+function orsBase(): string { return String(Deno.env.get('OPENROUTESERVICE_BASE_URL') || 'https://api.heigit.org/openrouteservice').replace(/\/$/, ''); }
 function orsProfile(): string { return String(Deno.env.get('OPENROUTESERVICE_PROFILE') || 'driving-car').trim(); }
 
 async function orsRequest(path: string, body: unknown): Promise<Record<string, unknown>> {
@@ -307,30 +309,55 @@ function readLineString(value: unknown): { type: 'LineString'; coordinates: Arra
   return coordinates.length >= 2 ? { type: 'LineString', coordinates } : null;
 }
 
+// Orders stops from a real road duration matrix. The provider has no optimization endpoint
+// on this host, so BusApp runs nearest-neighbour plus 2-opt itself — but over genuine road
+// durations rather than straight-line distance, which is what makes the result a road
+// ordering rather than an estimate.
+function orderFromMatrix(durations: number[][], stopCount: number, hasEnd: boolean): number[] {
+  const endIndex = hasEnd ? stopCount + 1 : 0;
+  const leg = (from: number, to: number) => durations[from]?.[to] ?? Number.POSITIVE_INFINITY;
+  const total = (order: number[]) => {
+    let sum = 0; let current = 0;
+    for (const stop of order) { sum += leg(current, stop); current = stop; }
+    return sum + leg(current, endIndex);
+  };
+  const remaining = Array.from({ length: stopCount }, (_, index) => index + 1);
+  const order: number[] = [];
+  let current = 0;
+  while (remaining.length) {
+    let best = 0;
+    for (let index = 1; index < remaining.length; index++) if (leg(current, remaining[index]) < leg(current, remaining[best])) best = index;
+    current = remaining.splice(best, 1)[0];
+    order.push(current);
+  }
+  let improved = true; let passes = 0;
+  while (improved && passes++ < 12) {
+    improved = false;
+    for (let i = 0; i < order.length - 1; i++) for (let j = i + 1; j < order.length; j++) {
+      const candidate = [...order.slice(0, i), ...order.slice(i, j + 1).reverse(), ...order.slice(j + 1)];
+      if (total(candidate) + 0.5 < total(order)) { order.splice(0, order.length, ...candidate); improved = true; }
+    }
+  }
+  return order;
+}
+
 async function orsOrderStops(input: RouteInput): Promise<string[]> {
   if (!input.stops.length) return [];
   if (input.stops.length === 1) return [input.stops[0].id];
-  // The provider receives coordinates and an opaque index only. No passenger, parent or
+  // The provider receives coordinates and positional indices only. No passenger, parent or
   // Bus Space identifier is ever sent to an external routing service.
-  const body = {
-    vehicles: [{
-      id: 1,
-      profile: orsProfile(),
-      start: [input.start.longitude, input.start.latitude],
-      ...(input.end ? { end: [input.end.longitude, input.end.latitude] } : input.roundTrip ? { end: [input.start.longitude, input.start.latitude] } : {}),
-    }],
-    jobs: input.stops.map((stop, index) => ({ id: index + 1, location: [stop.longitude, stop.latitude] })),
-  };
-  const payload = await orsRequest('/optimization', body);
-  const routes = Array.isArray(payload.routes) ? payload.routes as Array<{ steps?: Array<{ type?: string; job?: number; id?: number }> }> : [];
-  const steps = routes[0]?.steps || [];
-  const ordered = steps
-    .filter((step) => step.type === 'job')
-    .map((step) => Number(step.job ?? step.id))
-    .filter((index) => Number.isInteger(index) && index >= 1 && index <= input.stops.length)
-    .map((index) => input.stops[index - 1].id);
-  if (new Set(ordered).size !== input.stops.length) throw new RoutingError(502, 'ROUTING_PROVIDER_RESPONSE_INVALID', 'Routeberekening is tijdelijk niet beschikbaar.');
-  return ordered;
+  const points = [input.start, ...input.stops, ...(input.end ? [input.end] : [])];
+  const payload = await orsRequest(`/v2/matrix/${encodeURIComponent(orsProfile())}`, {
+    locations: points.map((point) => [point.longitude, point.latitude]),
+    metrics: ['duration'],
+  });
+  const durations = Array.isArray(payload.durations) ? payload.durations as unknown[] : null;
+  if (!durations || durations.length !== points.length) throw new RoutingError(502, 'ROUTING_PROVIDER_RESPONSE_INVALID', 'Routeberekening is tijdelijk niet beschikbaar.');
+  const matrix = durations.map((row) => Array.isArray(row) ? row.map((value) => Number(value)) : []);
+  if (matrix.some((row) => row.length !== points.length || row.some((value) => !Number.isFinite(value)))) {
+    throw new RoutingError(502, 'ROUTING_PROVIDER_RESPONSE_INVALID', 'Routeberekening is tijdelijk niet beschikbaar.');
+  }
+  return orderFromMatrix(matrix, input.stops.length, Boolean(input.end)).map((index) => input.stops[index - 1].id);
 }
 
 async function openRouteServiceOptimize(input: RouteInput): Promise<RouteResult> {
@@ -346,9 +373,10 @@ async function openRouteServiceOptimize(input: RouteInput): Promise<RouteResult>
   const path = [input.start, ...orderedPoints, ...(input.end ? [input.end] : input.roundTrip ? [input.start] : [])];
   if (path.length < 2) throw new RoutingError(422, 'ROUTE_NOT_FOUND', 'Geen geldige route gevonden.');
 
+  // `instructions: false` also removes `segments`, and the per-leg durations there are what
+  // the stop arrival offsets are built from, so instructions are left at their default.
   const directions = await orsRequest(`/v2/directions/${encodeURIComponent(orsProfile())}/geojson`, {
     coordinates: path.map((point) => [point.longitude, point.latitude]),
-    instructions: false,
   });
   const features = Array.isArray(directions.features) ? directions.features as Array<{ geometry?: unknown; properties?: { summary?: { distance?: unknown; duration?: unknown }; segments?: Array<{ distance?: unknown; duration?: unknown }> } }> : [];
   const feature = features[0];
