@@ -33,7 +33,34 @@ export const passengerSchema = z.object({
   stopId: uuid,
   displayName: z.string().trim().min(1).max(50),
   avatarKey: z.enum(['initials-blue','initials-green','initials-purple','initials-orange','initials-rose']).default('initials-blue'),
+  builtInAvatarId: z.enum([
+    'child-01','child-02','child-03','child-04','child-05','child-06','child-07','child-08',
+    'child-09','child-10','child-11','child-12','child-13','child-14','child-15','child-16',
+    'child-17','child-18','child-19','child-20','child-21','child-22','child-23','child-24',
+  ]).nullable().optional(),
 });
+
+export const profileUpdateSchema = z.object({
+  displayName: z.string().trim().min(1).max(50).optional(),
+  language: z.enum(['nl','fr']).optional(),
+  builtInAvatarId: z.enum(['adult-01','adult-02','adult-03','adult-04','adult-05','adult-06','adult-07','adult-08']).nullable().optional(),
+  expectedVersion: z.number().int().positive(),
+}).refine((value) => value.displayName !== undefined || value.language !== undefined || value.builtInAvatarId !== undefined, { message: 'PROFILE_UPDATE_EMPTY' });
+
+export const passengerAvatarSchema = z.object({
+  builtInAvatarId: z.enum([
+    'child-01','child-02','child-03','child-04','child-05','child-06','child-07','child-08',
+    'child-09','child-10','child-11','child-12','child-13','child-14','child-15','child-16',
+    'child-17','child-18','child-19','child-20','child-21','child-22','child-23','child-24',
+  ]).nullable(),
+  expectedVersion: z.number().int().positive(),
+});
+
+export const busProfileSchema = z.object({
+  name: z.string().trim().min(2).max(80).optional(),
+  builtInAvatarId: z.enum(['bus-yellow-city','bus-yellow-small','bus-blue-mini','bus-green-mini','bus-orange-coach','bus-electric']).optional(),
+  expectedVersion: z.number().int().positive(),
+}).refine((value) => value.name !== undefined || value.builtInAvatarId !== undefined, { message: 'BUS_UPDATE_EMPTY' });
 
 export const parentAccessSchema = z.object({
   parentDisplayName: z.string().trim().min(1).max(50),

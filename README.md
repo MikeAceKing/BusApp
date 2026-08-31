@@ -31,7 +31,7 @@ It intentionally excludes SBCOS, NAVI/Luna, other Wexio products, tenant data, p
 
 ## Architecture
 
-The browser talks only to the dedicated `bus-app` Edge Function for privileged operations. The function authenticates users, verifies Bus Space membership or parent grants, performs mutations with idempotency keys and writes audit events. Sensitive tables have RLS enabled and direct browser mutations are revoked. Realtime exposes only user-targeted parent pulses and notification rows.
+The browser talks only to the dedicated `bus-app` Edge Function for privileged operations. The function authenticates users, verifies Bus Space membership or parent grants, performs mutations with idempotency keys and writes audit events. Sensitive tables have RLS enabled and direct browser mutations are revoked. Realtime exposes only user-targeted parent, trip and avatar pulses plus notification rows.
 
 The primary domain is:
 
@@ -71,6 +71,44 @@ BUS_APP_GEOCODING_CONTACT=
 - Parent bus coordinates are rounded and contain no passenger or child location.
 - Live trip data expires and is cleared after terminal trip states.
 - Service-role credentials remain server-side.
+
+## Identities: person, bus and passenger
+
+BusApp keeps three separate identities and never conflates them.
+
+- **A personal profile is a person.** `bus_app_profiles` holds one canonical profile per authenticated user: a display name they choose, a language and an avatar. A driver, an attendant and a parent all use the same profile authority; only their Bus Space role differs. A profile is never seeded from a bus or Bus Space name.
+- **A bus profile is the vehicle.** Its name, avatar and photo live on the bus record and appear identically on every screen that shows that bus.
+- **A passenger profile is the passenger.** One canonical avatar, shared by everyone authorised to see it.
+
+Profiles open in read mode. Editing is an explicit step — *Profiel aanpassen* / *Modifier le profil*, *Bus aanpassen* / *Modifier le bus*, *Avatar aanpassen* / *Modifier l'avatar* — and ends with a labelled Cancel/Save pair.
+
+Editing the bus profile is governed by the `MANAGE_BUS_PROFILE` Bus Space permission. The server resolves it from the stored member record, falling back to the role default when no explicit grant or denial is recorded; a client-supplied role is never consulted.
+
+## Passenger avatar synchronization
+
+There is exactly one passenger avatar. No per-audience copy exists — no `parent_avatar`, no `staff_avatar`.
+
+```text
+parent updates the avatar  ─┐
+                            ├─> canonical passenger record ─> user-targeted realtime pulse ─> the other side refreshes
+authorised staff updates it ─┘
+```
+
+Both directions write the same row through the same server helper, and the pulse fans out to every active Bus Space member and to every parent holding a live grant for that passenger. Neither side can drift.
+
+## Parent-visible bus identity
+
+**Parent users only receive the bus and staff profile information required for their own active transport context.**
+
+A parent can open the bus they are actually assigned to and see its name, its avatar or photo, the current trip status, their own stop, and the display name, role and avatar of the driver and attendant. The server resolves that from the parent's own grant — grant → passenger → stop → bus → that bus's members — and builds a named DTO. There is no parent-facing membership, driver or bus listing endpoint, and the payload carries no email, phone number, user identifier, permission set or any other bus.
+
+## Profiles, avatars and language
+
+BusApp has one canonical profile per authenticated user and one canonical avatar per passenger or bus. Built-in assets are original local SVG illustrations: 24 child avatars, 8 adult avatars and 6 bus avatars. A private uploaded photo can replace an illustration; selecting another illustration safely retires the former upload.
+
+The visible NL/FR profile switch controls the current interface immediately and persists to both the browser and the canonical user profile. This is deliberately separate from the Bus Space default language, which controls operational bus notifications.
+
+Photos are uploaded only to the isolated `bus-app-media` function. It verifies authorization and the real file signature, limits input to 5 MiB, rejects active/vector/document formats, removes metadata and re-encodes a square profile/passenger image or 4:3 bus image as WebP. Originals are never stored. The private bucket is served through short-lived signed thumbnail URLs with a built-in/initials fallback.
 
 ## Local development
 
@@ -114,6 +152,12 @@ npm test
 
 The build blocks emoji product glyphs and simulated-map runtime classes. Tests cover TypeScript, RLS/security contracts, honest map states, PWA assets, NL/FR, mobile widths from 320 to 430 px, tablet at 768 px, landscape, 200% text sizing and horizontal overflow.
 
+A read-only maintenance report is available for profiles whose display name looks like it was seeded from a bus name by the earlier fallback. It never writes; affected users can simply edit their own profile.
+
+```bash
+npm run audit:profile-names --workspace app
+```
+
 Install the Playwright Chromium runtime once when needed:
 
 ```bash
@@ -128,9 +172,13 @@ Link the intended Supabase project, inspect migration ordering, then deploy only
 npx supabase migration list
 npx supabase db push --dry-run
 npx supabase db push
+node scripts/fetch-magick-wasm.mjs
 npx supabase functions deploy bus-app
+npx supabase functions deploy bus-app-media
 npm run build
 ```
+
+`supabase/functions/bus-app-media/magick.wasm` is a ~14 MB build artifact extracted from the pinned `@imagemagick/magick-wasm` dependency. It is deliberately not committed; `scripts/fetch-magick-wasm.mjs` copies it from `node_modules` so the deployed bundle cannot lose the binary during dependency graph rewriting.
 
 Publish `app/dist/` behind the BusApp host. Configure `CORS_ALLOWED_ORIGINS` with the exact production and local development origins. Verify the Edge health endpoint, PWA assets, browser console and the end-to-end driver/parent smoke flow after deployment.
 

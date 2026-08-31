@@ -32,6 +32,13 @@ export default function App() {
     localStorage.setItem('bus-app-locale', value);
     setLocaleState(value);
   };
+  useEffect(() => {
+    const profileLocale = context?.profile?.language;
+    if (profileLocale && profileLocale !== locale) {
+      localStorage.setItem('bus-app-locale', profileLocale);
+      setLocaleState(profileLocale);
+    }
+  }, [context?.profile?.language]);
   const setMode = (value: EntryMode | null) => {
     if (value) localStorage.setItem('bus-app-mode', value);
     else localStorage.removeItem('bus-app-mode');
@@ -74,7 +81,7 @@ export default function App() {
   const exit = () => setMode(null);
   if (mode === 'PARENT') {
     const grant = context?.parentGrants[0];
-    if (grant) return <ParentBusHome grantId={grant.id} locale={locale} onExit={exit} onGrantLost={() => setContext((current) => current ? { ...current, parentGrants: [] } : current)} />;
+    if (grant) return <ParentBusHome grantId={grant.id} locale={locale} onLocale={setLocale} onExit={exit} onGrantLost={() => setContext((current) => current ? { ...current, parentGrants: [] } : current)} />;
     return <ParentCode locale={locale} onLocale={setLocale} onBack={exit} onActivated={loadContext} />;
   }
 
@@ -82,5 +89,5 @@ export default function App() {
   if (error && !context) return <main className="app-shell"><StateCard icon={CircleAlert} title={error} action={<button className="primary-button" onClick={loadContext}>{t('retry')}</button>} /></main>;
   const space = context?.spaces[0];
   if (!space) return <BusOnboarding locale={locale} onLocale={setLocale} onLogout={() => supabase.auth.signOut()} onCreated={loadContext} />;
-  return <BusHome space={space} locale={locale} onExit={exit} />;
+  return <BusHome space={space} locale={locale} onLocale={setLocale} onExit={exit} />;
 }

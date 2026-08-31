@@ -1,6 +1,6 @@
 # BusApp V2 — domain and rollout audit
 
-Date: 2026-08-31
+Date: 2026-08-31  
 Production scope: `busapp.wexio.be` only
 
 ## Outcome
@@ -32,11 +32,13 @@ The legacy `school_bus_*` tables and `school-bus` Edge function remain deployed 
 | Route | Mutable plan; stop/address/passenger snapshot copied into an immutable trip |
 | Notifications | Dedicated BusApp notification/push tables; filtered realtime pulses per authenticated user |
 | Languages | NL and FR in the same runtime and data model |
+| User profile | `bus_app_profiles`, created on first authenticated call; no tenant or workspace record required |
+| Avatars | Built-in SVG set is the default; an optional private photo is stored as a server-sanitized WebP asset |
 
 ## Privacy and authorization
 
-- All 22 V2 domain tables have RLS enabled and direct browser writes revoked.
-- Only `bus_app_parent_trip_updates` and `bus_app_notifications` are browser-readable, with `user_id = auth.uid()` policies.
+- All 25 domain tables (22 V2 plus 3 added by V2.1) have RLS enabled and direct browser writes revoked.
+- Only `bus_app_parent_trip_updates`, `bus_app_notifications` and `bus_app_avatar_updates` are browser-readable, with `user_id = auth.uid()` policies.
 - Every staff route derives access from `bus_app_members`; client-supplied roles are not trusted.
 - A parent response is built from the exact parent grant → passenger links → those passengers' stops.
 - Parent payloads omit the full route, other stops, other passengers, members, raw history, and driver session IDs.
@@ -54,18 +56,44 @@ The production upgrade path is to deploy a separately monitored OSRM/VROOM servi
 
 ## Rollout and rollback
 
-- Applied migrations: `20260830220000_bus_app_v2_neutral_foundation.sql` and `20260831003000_bus_app_v2_location_event_speed.sql` only.
-- Deployed function: `bus-app`; `school-bus` remains active.
+- V2 migrations: `20260830220000_bus_app_v2_neutral_foundation.sql` and `20260831003000_bus_app_v2_location_event_speed.sql`.
+- V2.1 migrations: `20260831013000_bus_app_v2_avatar_styles.sql`, `20260831054000_bus_app_profiles_and_private_avatars.sql` and
+  `20260831055000_bus_app_avatar_reference_guard_fix.sql`. All three are additive; `055000` only replaces the trigger function body from `054000`.
+- Functions: `bus-app` and `bus-app-media`; `school-bus` remains active.
+- Not verified from the authoring session: whether the V2.1 migrations are applied and `bus-app-media` is deployed on production.
+  Confirm both against the live project before treating the V2.1 section below as shipped.
 - Anonymous Supabase users are enabled for parent devices.
 - `BUS_APP_CODE_HASH_SECRET` and existing VAPID push secrets are configured server-side.
 - CORS preflight from `https://busapp.wexio.be` returns 204 with the exact allowed origin.
 - Rollback does not require deleting V2 data: restore the previous BusApp frontend/API slug and keep the additive V2 tables dormant.
 
+## V2.1 — canonical profiles and private photos
+
+Built-in avatars stay the default and the final fallback. A photo is optional and never replaces the identity model.
+
+- Upload path is a separate `bus-app-media` Edge function. It never trusts the client: it authenticates the bearer token,
+  then derives authority per owner — the caller's own profile, `OWNER`/`ATTENDANT` for a passenger, `OWNER` for a bus,
+  and for a parent a live grant resolved through `bus_app_parent_grants` → `bus_app_parent_access` → `bus_app_parent_access_passengers`.
+- Every upload is re-encoded server-side by ImageMagick WASM: magic bytes must match the declared type, animations are rejected,
+  the image is cropped and resized to a fixed aspect, `strip()` removes all metadata, and only WebP is written out.
+  The `magick.wasm` binary is pinned beside the function so the hosted bundle cannot lose it during dependency graph rewriting.
+- `bus-app-private-media` is a private bucket limited to 5 MB and `image/webp`. Photos are served only as 300-second signed
+  URLs for the thumbnail; no code path produces a public URL.
+- `bus_app_avatar_assets` carries exactly one owner (`num_nonnulls(profile_user_id, passenger_id, bus_id) = 1`), a scope
+  trigger ties passenger/bus assets to their Bus Space, and a reference trigger refuses an avatar pointing at an asset that
+  is not its own and `ACTIVE`. Replacing a photo retires the old asset and deletes both stored objects.
+- Reference updates are optimistically concurrent on `avatar_version`; a lost race returns `AVATAR_CONFLICT` rather than
+  overwriting. A failed reference update rolls back both the asset row and the stored objects.
+- `bus_app_profiles`, `bus_app_avatar_assets` and `bus_app_avatar_updates` have RLS enabled and are revoked from `anon`
+  and `authenticated`. The only grant to `authenticated` is `select` on `bus_app_avatar_updates`, restricted to `user_id = auth.uid()`.
+- Refresh is a coordinate-free, user-targeted realtime pulse: the server inserts one `bus_app_avatar_updates` row per
+  authorized recipient, both clients subscribe filtered on their own `user_id`, and the rows expire after 24 hours.
+
 ## Verification evidence
 
 - TypeScript/Vite production build passes.
-- Deno Edge typecheck passes.
-- Seven V2 security/lifecycle contract tests pass.
+- Deno Edge typecheck passes for `bus-app` and `bus-app-media`.
+- Twelve `tests/server/bus-app-v2-contract.test.mjs` security/lifecycle contract tests pass, four of them covering the V2.1 profile, private-media and avatar-pulse invariants.
 - Eighteen Playwright viewport/localization tests cover 320×568 through 768×1024, NL/FR, landscape, 200% inherited text, overloaded content, route, and filtered parent views.
 - Screenshots are stored in `artifacts/bus-app-v2`.
 - A production smoke run creates and removes temporary users/data while verifying Bus Space creation, stop/passenger creation, automatic route, immutable trip, GPS, attendance, anonymous parent grant, and filtered parent payload.
@@ -75,3 +103,6 @@ The production upgrade path is to deploy a separately monitored OSRM/VROOM servi
 - Replace estimated local geometry with a monitored road-network OSRM/VROOM deployment before presenting turn-by-turn or road-exact ETAs.
 - Add staff invitation UI when multi-staff onboarding becomes a product requirement; the membership/permission model is already extensible.
 - Add per-event notification preferences if users need to mute specific event types. Current critical trip events are enabled by default.
+- The V2.1 photo path has no live production smoke run yet; `scripts/production-smoke.mjs` still covers only the V2 domain.
+- Retired (`REPLACED`) avatar asset rows are kept as an audit trail after their storage objects are deleted. Add a retention
+  sweep if that history stops being useful.

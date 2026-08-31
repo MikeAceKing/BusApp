@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Copy, KeyRound, MapPin, Plus, RotateCcw, UserRoundPlus, UserX, X } from 'lucide-react';
+import { Copy, KeyRound, MapPin, Pencil, Plus, RotateCcw, UserRoundPlus, UserX, X } from 'lucide-react';
 import { api } from '../api';
 import type { AvatarStyle, Locale, SpaceHome } from '../types';
-import { AddressText, BusyButton, CountLabel, ErrorBanner, InitialAvatar, createT, formatBelgianAddress } from './Shared';
+import { AddressText, BusyButton, CountLabel, ErrorBanner, createT, formatBelgianAddress } from './Shared';
+import { AvatarDisplay, AvatarEditor } from './AvatarProfiles';
 
 const avatarStyles: AvatarStyle[] = ['initials-blue', 'initials-green', 'initials-purple', 'initials-orange', 'initials-rose'];
 
@@ -12,6 +13,8 @@ export function PassengerManager({ home, locale, onChanged }: { home: SpaceHome;
   const [stopId, setStopId] = useState(home.stops[0]?.id || '');
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState<AvatarStyle>('initials-blue');
+  const [builtInAvatar,setBuiltInAvatar]=useState('child-01');
+  const [editingAvatar,setEditingAvatar]=useState('');
   const [parentName, setParentName] = useState('');
   const [passengerId, setPassengerId] = useState(home.passengers[0]?.id || '');
   const [busy, setBusy] = useState('');
@@ -26,7 +29,7 @@ export function PassengerManager({ home, locale, onChanged }: { home: SpaceHome;
 
   async function createPassenger(event: FormEvent) {
     event.preventDefault(); setBusy('passenger'); setError('');
-    try { await api(`/spaces/${home.space.id}/passengers`, { method: 'POST', idempotent: true, body: { stopId, displayName: name, avatarKey: avatar } }); setName(''); setMode(null); await onChanged(); }
+    try { await api(`/spaces/${home.space.id}/passengers`, { method: 'POST', idempotent: true, body: { stopId, displayName: name, avatarKey: avatar, builtInAvatarId: builtInAvatar } }); setName(''); setMode(null); await onChanged(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : t('error')); }
     finally { setBusy(''); }
   }
@@ -49,17 +52,16 @@ export function PassengerManager({ home, locale, onChanged }: { home: SpaceHome;
     finally { setBusy(''); }
   }
 
-  const avatarLabels: Record<AvatarStyle, string> = { 'initials-blue': t('avatarBlue'), 'initials-green': t('avatarGreen'), 'initials-purple': t('avatarPurple'), 'initials-orange': t('avatarOrange'), 'initials-rose': t('avatarRose') };
   return <section className="passenger-page">
-    <header className="section-heading"><div><small>{home.space.name}</small><h1>{t('passengers')}</h1></div><strong>{home.passengers.length}</strong></header>
+    <header className="section-heading"><div><small>{home.bus?.name || home.space.name}</small><h1>{t('passengers')}</h1></div><strong>{home.passengers.length}</strong></header>
     <ErrorBanner message={error} />
-    {home.passengers.length ? <div className="passenger-cards">{home.passengers.map((passenger) => <article key={passenger.id}><InitialAvatar name={passenger.display_name} avatar={passenger.avatar_key} /><span><strong>{passenger.display_name}</strong>{stops.get(passenger.stop_id) ? <span className="inline-fact"><MapPin aria-hidden="true" /><AddressText address={stops.get(passenger.stop_id)!.display_address} compact /></span> : <small>—</small>}</span></article>)}</div> : <section className="passenger-empty"><UserRoundPlus aria-hidden="true" /><div><h2>{t('noPassengers')}</h2><p>{t('noPassengersHelp')}</p></div></section>}
+    {home.passengers.length ? <div className="passenger-cards">{home.passengers.map((passenger) => <article key={passenger.id} className="passenger-profile-card"><AvatarDisplay kind="child" avatar={passenger.avatar} name={passenger.display_name}/><span><strong>{passenger.display_name}</strong>{stops.get(passenger.stop_id) ? <span className="inline-fact"><MapPin aria-hidden="true" /><AddressText address={stops.get(passenger.stop_id)!.display_address} compact /></span> : <small>—</small>}</span>{passenger.avatar&&<button className="secondary-button button-with-icon edit-affordance" aria-expanded={editingAvatar===passenger.id} onClick={()=>setEditingAvatar((current)=>current===passenger.id?'':passenger.id)}><Pencil aria-hidden="true"/>{t('editAvatar')}</button>}{editingAvatar===passenger.id&&passenger.avatar&&<div className="passenger-avatar-editor"><AvatarEditor kind="child" avatar={passenger.avatar} name={passenger.display_name} locale={locale} patchPath={`/spaces/${home.space.id}/passengers/${passenger.id}/avatar`} uploadPath={`/spaces/${home.space.id}/passengers/${passenger.id}`} onChanged={async()=>{await onChanged();}}/><div className="edit-actions"><button type="button" className="secondary-button" onClick={()=>setEditingAvatar('')}>{t('cancelEdit')}</button></div></div>}</article>)}</div> : <section className="passenger-empty"><UserRoundPlus aria-hidden="true" /><div><h2>{t('noPassengers')}</h2><p>{t('noPassengersHelp')}</p></div></section>}
     <div className="passenger-actions"><button className="secondary-button button-with-icon" aria-expanded={mode === 'passenger'} onClick={() => setMode(mode === 'passenger' ? null : 'passenger')}><UserRoundPlus aria-hidden="true" />{t('newPassenger')}</button><button className="secondary-button parent-code-button" aria-expanded={mode === 'code'} onClick={() => setMode(mode === 'code' ? null : 'code')}><KeyRound aria-hidden="true" /><span>{t('parentCodes')}</span><b><CountLabel count={home.parentAccess.length} one={t('codeOne')} many={t('codeMany')} /></b></button></div>
     {mode === 'passenger' && <section className="manager-panel" ref={panelRef}><header><div><h2>{t('newPassenger')}</h2><p>{t('chooseAvatar')}</p></div><button className="icon-button" onClick={() => setMode(null)} aria-label={t('closeForm')}><X aria-hidden="true" /></button></header><form className="manager-form" onSubmit={createPassenger}>
       <label>{t('yourStop')}<select required value={stopId} onChange={(event) => setStopId(event.target.value)}><option value="">—</option>{home.stops.map((stop) => { const address = formatBelgianAddress(stop.display_address, stop.label); return <option key={stop.id} value={stop.id}>{[address.primary, address.secondary].filter(Boolean).join(' — ')}</option>; })}</select></label>
       <label>{t('passengerDisplayName')}<input required maxLength={50} value={name} onChange={(event) => setName(event.target.value)} /></label>
-      <div className="avatar-preview"><InitialAvatar name={name || 'BusApp'} avatar={avatar} /><strong>{name || t('passengerDisplayName')}</strong></div>
-      <fieldset className="avatar-style-picker"><legend>{t('avatar')}</legend><div>{avatarStyles.map((style) => <button type="button" key={style} aria-label={avatarLabels[style]} title={avatarLabels[style]} aria-pressed={avatar === style} onClick={() => setAvatar(style)}><InitialAvatar name={name || 'BusApp'} avatar={style} /></button>)}</div></fieldset>
+      <div className="avatar-preview"><img className="canonical-avatar" src={`/avatars/${builtInAvatar}.svg`} alt=""/><strong>{name || t('passengerDisplayName')}</strong></div>
+      <fieldset className="avatar-style-picker"><legend>{t('choosePassengerAvatar')}</legend><div className="avatar-catalog avatar-catalog--child">{Array.from({length:24},(_,index)=>`child-${String(index+1).padStart(2,'0')}`).map((id) => <button type="button" key={id} aria-label={id} aria-pressed={builtInAvatar === id} onClick={() => {setBuiltInAvatar(id);setAvatar(avatarStyles[Number(id.slice(-2))%avatarStyles.length]);}}><img src={`/avatars/${id}.svg`} alt=""/></button>)}</div></fieldset>
       <BusyButton busy={busy === 'passenger'} className="primary-button button-with-icon" disabled={!stopId}><Plus aria-hidden="true" />{t('add')}</BusyButton>
     </form></section>}
     {mode === 'code' && <section className="manager-panel" ref={panelRef}><header><div><h2>{t('parentCodes')}</h2><p><CountLabel count={home.parentAccess.length} one={t('codeOne')} many={t('codeMany')} /></p></div><button className="icon-button" onClick={() => setMode(null)} aria-label={t('closeForm')}><X aria-hidden="true" /></button></header>

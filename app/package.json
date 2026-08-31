@@ -8,7 +8,8 @@
     "build": "npm run test:integrity && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test:integrity": "node scripts/check-ui-integrity.mjs",
-    "test:responsive": "playwright test --config=playwright.config.ts"
+    "test:responsive": "playwright test --config=playwright.config.ts",
+    "audit:profile-names": "node scripts/audit-profile-name-drift.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.6",

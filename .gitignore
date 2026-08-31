@@ -22,3 +22,6 @@ supabase/.branches/
 tmp/
 .cache/
 artifacts/
+
+# Build artifact extracted from the pinned @imagemagick/magick-wasm dependency.
+supabase/functions/bus-app-media/magick.wasm

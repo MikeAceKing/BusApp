@@ -43,10 +43,6 @@ export function LanguageSwitch({ locale, onChange }: { locale: Locale; onChange:
   </div>;
 }
 
-export function PageHeader({ title, action }: { title?: ReactNode; action?: ReactNode }) {
-  return <header className="page-header"><Brand compact /><div className="page-header__title">{title}</div>{action}</header>;
-}
-
 export function StateCard({ icon: Icon, title, body, action }: { icon: LucideIcon; title: string; body?: string; action?: ReactNode }) {
   return <section className="state-card"><Icon className="state-card__icon" aria-hidden="true" /><h2>{title}</h2>{body && <p>{body}</p>}{action}</section>;
 }

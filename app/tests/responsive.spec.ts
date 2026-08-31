@@ -87,37 +87,49 @@ async function seed(page: Page, mode: 'BUS' | 'PARENT', locale: 'nl' | 'fr', par
 }
 
 function fixtures(overloaded = false, activeTrip = false) {
+  const avatar = (builtInAvatarId:string,version=1) => ({ source:'BUILT_IN',builtInAvatarId,assetId:null,version,photoUrl:null });
+  const profile = { user_id:userId,display_name:'Alex',language:'nl',avatar_version:1,avatar:avatar('adult-01') };
   const stops = [
-    { id: stopId, bus_space_id: spaceId, bus_id: busId, label: null, display_address: '13, Reebokjeslaan, Verrewinkel, Ukkel, Brussel-Hoofdstad, 1180, België', latitude: 50.95, longitude: 4.05, expected_passenger_count: 3, manual_sequence: 1, active: true },
+    { id: stopId, bus_space_id: spaceId, bus_id: busId, label: null, display_address: '1, Voorbeeldlaan, Verrewinkel, Ukkel, Brussel-Hoofdstad, 1180, België', latitude: 50.95, longitude: 4.05, expected_passenger_count: 3, manual_sequence: 1, active: true },
     { id: secondStopId, bus_space_id: spaceId, bus_id: busId, label: 'Grote Markt', display_address: 'Grote Markt 7, 9300 Aalst, België', latitude: 50.96, longitude: 4.06, expected_passenger_count: 1, manual_sequence: 2, active: true },
   ];
   const active = { id: tripId, status: 'IN_TRANSIT', driver_session_id: '66666666-6666-4666-8666-666666666666', route_plan_id: '33333333-3333-4333-8333-333333333333', current_stop_sequence: 0 };
   return {
     home: {
+      profile,
       space: { id: spaceId, name: 'Buurtbus Ukkel', avatar_key: 'bus', default_language: 'nl', roles: ['OWNER'] },
-      bus: { id: busId, bus_space_id: spaceId, name: 'Buurtbus Ukkel', avatar_key: 'bus', capacity: overloaded ? 2 : 16, start_display_address: 'Stationsstraat 123 bus 45, 9300 Aalst, België', start_latitude: 50.94, start_longitude: 4.04, end_display_address: null, end_latitude: null, end_longitude: null },
+      bus: { id: busId, bus_space_id: spaceId, name: 'Buurtbus Ukkel', avatar_key: 'bus', avatar:avatar('bus-yellow-city'),avatar_version:1, capacity: overloaded ? 2 : 16, start_display_address: 'Stationsstraat 123 bus 45, 9300 Aalst, België', start_latitude: 50.94, start_longitude: 4.04, end_display_address: null, end_latitude: null, end_longitude: null },
       stops,
-      passengers: [{ id: passengerId, bus_space_id: spaceId, stop_id: stopId, display_name: 'Alex D.', avatar_key: 'initials-purple', active: true }],
+      passengers: [{ id: passengerId, bus_space_id: spaceId, stop_id: stopId, display_name: 'Alex D.', avatar_key: 'initials-purple', avatar:avatar('child-01'),avatar_version:1, active: true }],
       routePlan: { id: active.route_plan_id, bus_id: busId, provider: 'local_heuristic', optimization_mode: 'AUTOMATIC', distance_meters: 31750, duration_seconds: 2520, route_geometry: { type: 'LineString', coordinates: [[4.04, 50.94], [4.05, 50.95], [4.06, 50.96]] }, provider_metadata: { estimate: true, geometrySource: 'estimate' }, stale_at: null, stops: stops.map((stop, index) => ({ stop_id: stop.id, sequence: index + 1, estimated_arrival_offset_seconds: 900 * (index + 1), display_address_snapshot: stop.display_address, latitude_snapshot: stop.latitude, longitude_snapshot: stop.longitude, expected_passenger_count_snapshot: stop.expected_passenger_count })) },
       activeTrip: activeTrip ? active : null,
       members: [{ id: '44444444-4444-4444-8444-444444444444', user_id: userId, role: 'OWNER' }],
       parentAccess: [],
+      role: 'OWNER',
+      permissions: { manageBusProfile: true },
     },
     trip: {
       role: 'OWNER',
-      trip: { ...active, bus: { id: busId, name: 'Buurtbus Ukkel', avatar_key: 'bus' }, stops: stops.map((stop, index) => ({ id: `77777777-7777-4777-8777-77777777777${index}`, source_stop_id: stop.id, sequence: index + 1, display_address: stop.display_address, latitude: stop.latitude, longitude: stop.longitude, expected_passenger_count: stop.expected_passenger_count, estimated_arrival_offset_seconds: 900 * (index + 1), status: index ? 'PENDING' : 'APPROACHING' })), nextStop: { id: '77777777-7777-4777-8777-777777777770', source_stop_id: stopId, sequence: 1, display_address: stops[0].display_address, latitude: stops[0].latitude, longitude: stops[0].longitude, expected_passenger_count: 3, estimated_arrival_offset_seconds: 900, status: 'APPROACHING' }, passengers: [{ id: '88888888-8888-4888-8888-888888888888', passenger_id: passengerId, trip_stop_id: '77777777-7777-4777-8777-777777777770', display_name_snapshot: 'Alex D.', avatar_key_snapshot: 'initials-purple', status: 'EXPECTED', version: 1 }] },
+      trip: { ...active, bus: { id: busId, name: 'Buurtbus Ukkel', avatar_key: 'bus',avatar:avatar('bus-yellow-city') }, stops: stops.map((stop, index) => ({ id: `77777777-7777-4777-8777-77777777777${index}`, source_stop_id: stop.id, sequence: index + 1, display_address: stop.display_address, latitude: stop.latitude, longitude: stop.longitude, expected_passenger_count: stop.expected_passenger_count, estimated_arrival_offset_seconds: 900 * (index + 1), status: index ? 'PENDING' : 'APPROACHING' })), nextStop: { id: '77777777-7777-4777-8777-777777777770', source_stop_id: stopId, sequence: 1, display_address: stops[0].display_address, latitude: stops[0].latitude, longitude: stops[0].longitude, expected_passenger_count: 3, estimated_arrival_offset_seconds: 900, status: 'APPROACHING' }, passengers: [{ id: '88888888-8888-4888-8888-888888888888', passenger_id: passengerId, trip_stop_id: '77777777-7777-4777-8777-777777777770', display_name_snapshot: 'Alex D.', avatar_key_snapshot: 'initials-purple',avatar:avatar('child-01'), status: 'EXPECTED', version: 1 }] },
     },
   };
 }
 
-async function mockApi(page: Page, options: { parent?: boolean; overloaded?: boolean; activeTrip?: boolean } = {}) {
+async function mockApi(page: Page, options: { parent?: boolean; overloaded?: boolean; activeTrip?: boolean;locale?:'nl'|'fr' } = {}) {
   const data = fixtures(Boolean(options.overloaded), Boolean(options.activeTrip));
+  data.home.profile.language=options.locale||'nl';
   await page.route('**/functions/v1/bus-app/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (path.endsWith('/context')) return route.fulfill({ json: { user: { id: userId, email: options.parent ? null : 'driver@example.test', isAnonymous: Boolean(options.parent) }, spaces: options.parent ? [] : [data.home.space], parentGrants: options.parent ? [{ id: grantId, parent_access_id: '11111111-1111-4111-8111-111111111111', last_seen_at: new Date().toISOString() }] : [] } });
+    if (path.endsWith('/context')) return route.fulfill({ json: { user: { id: userId, email: options.parent ? null : 'driver@example.test', isAnonymous: Boolean(options.parent) },profile:data.home.profile, spaces: options.parent ? [] : [data.home.space], parentGrants: options.parent ? [{ id: grantId, parent_access_id: '11111111-1111-4111-8111-111111111111', last_seen_at: new Date().toISOString() }] : [] } });
     if (path.endsWith(`/spaces/${spaceId}/home`)) return route.fulfill({ json: data.home });
     if (path.endsWith(`/spaces/${spaceId}/trip`)) return route.fulfill({ json: data.trip });
-    if (path.endsWith('/parent/home')) return route.fulfill({ json: { grantId, parent: { displayName: 'Alex' }, space: data.home.space, bus: { id: busId, name: 'Buurtbus Ukkel', avatar_key: 'bus' }, trip: { id: tripId, status: 'IN_TRANSIT', currentStopSequence: 0, startedAt: new Date().toISOString(), location: { latitude: 50.945, longitude: 4.045, capturedAt: new Date().toISOString() } }, passengers: [{ ...data.home.passengers[0], stop: { id: stopId, display_address: data.home.stops[0].display_address, latitude: 50.95, longitude: 4.05 }, status: 'BOARDED', statusVersion: 2, etaMinutes: 4 }] } });
+    if (path.endsWith('/parent/home')) return route.fulfill({ json: { grantId, parent: { displayName: 'Alex',profile:data.home.profile }, space: data.home.space, bus: data.home.bus, trip: { id: tripId, status: 'IN_TRANSIT', currentStopSequence: 0, startedAt: new Date().toISOString(), location: { latitude: 50.945, longitude: 4.045, capturedAt: new Date().toISOString() } }, passengers: [{ ...data.home.passengers[0], stop: { id: stopId, display_address: data.home.stops[0].display_address, latitude: 50.95, longitude: 4.05 }, status: 'BOARDED', statusVersion: 2, etaMinutes: 4 }] } });
+    if (path.endsWith('/parent/bus-profile')) return route.fulfill({ json: {
+      bus: { displayName: 'Buurtbus Ukkel', avatar: { source: 'BUILT_IN', builtInAvatarId: 'bus-yellow-city', assetId: null, version: 1, photoUrl: null }, currentTripStatus: 'IN_TRANSIT' },
+      driver: { displayName: 'Marc', role: 'DRIVER', avatar: { source: 'BUILT_IN', builtInAvatarId: 'adult-02', assetId: null, version: 1, photoUrl: null } },
+      attendant: { displayName: 'Sophie', role: 'ATTENDANT', avatar: { source: 'BUILT_IN', builtInAvatarId: 'adult-05', assetId: null, version: 1, photoUrl: null } },
+      ownStop: { displayAddress: data.home.stops[0].display_address },
+    } });
     if (path.endsWith('/notifications')) return route.fulfill({ json: { notifications: [] } });
     return route.fulfill({ json: { ok: true } });
   });
@@ -141,7 +153,7 @@ for (const locale of ['nl', 'fr'] as const) {
   test(`${locale} driver pages stay warm, compact and reachable`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await seed(page, 'BUS', locale);
-    await mockApi(page, { overloaded: true });
+    await mockApi(page, { overloaded: true,locale });
     await page.goto('/');
     await expect(page.locator('.friendly-landscape .friendly-landscape__bus')).toBeVisible();
     await expect(page.getByText(locale === 'fr' ? '4 passagers pour 2 places' : '4 passagiers voor 2 plaatsen')).toBeVisible();
@@ -168,7 +180,8 @@ for (const locale of ['nl', 'fr'] as const) {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('navigation', { name: 'BusApp' }).getByRole('button', { name: locale === 'fr' ? 'Profil' : 'Profiel' }).click();
-    expect(await page.locator('.profile-identity').evaluate((node) => node.getBoundingClientRect().height)).toBeLessThan(130);
+    await expect(page.getByText(locale==='fr'?"Langue de l’application":'Taal van de app')).toBeVisible();
+    await expect(page.getByRole('button',{name:locale==='fr'?'FR':'NL'}).last()).toHaveAttribute('aria-pressed','true');
     await geometry(page, true);
     await page.screenshot({ path: `${artifacts}/profile-${locale}-390x844.png`, fullPage: true });
   });
@@ -176,10 +189,10 @@ for (const locale of ['nl', 'fr'] as const) {
   test(`${locale} parent and active trip views remain private and operational`, async ({ page }) => {
     await page.setViewportSize({ width: 412, height: 915 });
     await seed(page, 'PARENT', locale, true);
-    await mockApi(page, { parent: true });
+    await mockApi(page, { parent: true,locale });
     await page.goto('/');
     await expect(page.getByText(locale === 'fr' ? 'Bonjour Alex' : 'Hallo Alex')).toBeVisible();
-    await expect(page.getByText('Reebokjeslaan 13').first()).toBeVisible();
+    await expect(page.getByText('Voorbeeldlaan 1').first()).toBeVisible();
     await expect(page.getByText('1180 Ukkel').first()).toBeVisible();
     await expect(page.getByText('Alex D.').first()).toBeVisible();
     await expect(page.getByText(locale === 'fr' ? 'Presque à votre arrêt' : 'Bijna bij jouw halte')).toBeVisible();
@@ -187,7 +200,7 @@ for (const locale of ['nl', 'fr'] as const) {
     await page.screenshot({ path: `${artifacts}/parent-${locale}-412x915.png`, fullPage: true });
 
     await seed(page, 'BUS', locale);
-    await mockApi(page, { activeTrip: true });
+    await mockApi(page, { activeTrip: true,locale });
     await page.goto('/');
     await expect(page.locator('.trip-progress__bus')).toBeVisible();
     await expect(page.getByText(locale === 'fr' ? 'Prochain arrêt' : 'Volgende halte')).toBeVisible();
@@ -238,3 +251,92 @@ test('manifest and install icons are reachable and dimensioned', async ({ page }
     expect(result).toEqual({ ok: true, width: expected, height: expected });
   }
 });
+
+for (const locale of ['nl', 'fr'] as const) {
+  test(`${locale} authenticated shells render no BusApp top bar`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const mode of ['BUS', 'PARENT'] as const) {
+      await seed(page, mode, locale, mode === 'PARENT');
+      await mockApi(page, { parent: mode === 'PARENT', locale });
+      await page.goto('/');
+      await expect(page.locator('.page-header')).toHaveCount(0);
+      // The BusApp wordmark belongs to the unauthenticated entry, not to every screen.
+      await expect(page.locator('.brand')).toHaveCount(0);
+      await expect(page.getByRole('navigation', { name: 'BusApp' })).toBeVisible();
+      // No blank header space is left behind: real content starts at the top of the shell.
+      const top = await page.evaluate(() => {
+        const content = document.querySelector('.page-content');
+        return content ? content.firstElementChild!.getBoundingClientRect().top : 999;
+      });
+      expect(top, 'content must not sit below an empty header gap').toBeLessThan(60);
+      await geometry(page, true);
+    }
+  });
+
+  test(`${locale} driver edits the person and the bus as separate identities`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seed(page, 'BUS', locale);
+    await mockApi(page, { locale });
+    await page.goto('/');
+    await page.getByRole('navigation', { name: 'BusApp' }).getByRole('button', { name: locale === 'fr' ? 'Profil' : 'Profiel' }).click();
+
+    // The personal card is a person and shows the role, never the bus name.
+    const personal = page.locator('.profile-editor-card').first();
+    await expect(personal.getByRole('heading', { level: 2, name: 'Alex' })).toBeVisible();
+    await expect(personal.getByText(locale === 'fr' ? 'Conducteur' : 'Chauffeur')).toBeVisible();
+    await expect(personal.getByRole('heading', { level: 2, name: 'Buurtbus Ukkel' })).toHaveCount(0);
+
+    // Read mode by default: no permanently exposed input, no icon-only save.
+    await expect(personal.locator('input')).toHaveCount(0);
+    await personal.getByRole('button', { name: locale === 'fr' ? 'Modifier le profil' : 'Profiel aanpassen' }).click();
+    await expect(personal.locator('.profile-name-form input')).toBeVisible();
+    await expect(personal.getByRole('button', { name: locale === 'fr' ? 'Enregistrer' : 'Opslaan' })).toBeVisible();
+    await expect(personal.getByRole('button', { name: locale === 'fr' ? 'Annuler' : 'Annuleren' }).first()).toBeVisible();
+    await personal.getByRole('button', { name: locale === 'fr' ? 'Annuler' : 'Annuleren' }).first().click();
+    await expect(personal.locator('.profile-name-form input')).toHaveCount(0);
+
+    // The bus is its own card under "my bus", with a name field and the bus avatars.
+    const busCard = page.locator('.bus-profile-card');
+    await expect(page.getByRole('heading', { level: 2, name: locale === 'fr' ? 'Mon bus' : 'Mijn bus' })).toBeVisible();
+    await expect(busCard.getByRole('heading', { level: 2, name: 'Buurtbus Ukkel' })).toBeVisible();
+    await busCard.getByRole('button', { name: locale === 'fr' ? 'Modifier le bus' : 'Bus aanpassen' }).click();
+    await expect(busCard.locator('.profile-name-form input')).toHaveValue('Buurtbus Ukkel');
+    await expect(busCard.locator('.avatar-catalog--bus button')).toHaveCount(6);
+    await expect(busCard.getByText(locale === 'fr' ? 'Importer une photo' : 'Foto uploaden')).toBeVisible();
+    await geometry(page, true);
+    await page.screenshot({ path: `${artifacts}/profile-identities-${locale}-390x844.png`, fullPage: true });
+  });
+
+  test(`${locale} parent opens the assigned bus profile and edits their own profile`, async ({ page }) => {
+    await page.setViewportSize({ width: 412, height: 915 });
+    await seed(page, 'PARENT', locale, true);
+    await mockApi(page, { parent: true, locale });
+    await page.goto('/');
+
+    await page.locator('.parent-bus-cta').click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Buurtbus Ukkel' })).toBeVisible();
+    await expect(page.getByText('Marc')).toBeVisible();
+    await expect(page.getByText(locale === 'fr' ? 'Conducteur' : 'Chauffeur')).toBeVisible();
+    await expect(page.getByText('Sophie')).toBeVisible();
+    await expect(page.getByText(locale === 'fr' ? 'Accompagnateur' : 'Begeleider')).toBeVisible();
+    // Nothing private about the staff reaches the parent view.
+    await expect(page.getByText('@')).toHaveCount(0);
+    await expect(page.getByText(userId)).toHaveCount(0);
+    await expect(page.locator('.parent-bus-profile')).not.toContainText('OWNER');
+    await geometry(page, true);
+    await page.screenshot({ path: `${artifacts}/parent-bus-profile-${locale}-412x915.png`, fullPage: true });
+    await page.getByRole('button', { name: locale === 'fr' ? 'Retour' : 'Terug' }).click();
+    await expect(page.locator('.parent-bus-cta')).toBeVisible();
+
+    await page.getByRole('navigation', { name: 'BusApp' }).getByRole('button', { name: locale === 'fr' ? 'Profil' : 'Profiel' }).click();
+    const personal = page.locator('.profile-editor-card').first();
+    await expect(personal.getByText(locale === 'fr' ? 'Parent' : 'Ouder')).toBeVisible();
+    await personal.getByRole('button', { name: locale === 'fr' ? 'Modifier le profil' : 'Profiel aanpassen' }).click();
+    await expect(personal.locator('.profile-name-form input')).toHaveValue('Alex');
+    // The parent edits their own passenger avatar through a labelled action.
+    await page.getByRole('button', { name: locale === 'fr' ? "Modifier l'avatar" : 'Avatar aanpassen' }).click();
+    await expect(page.locator('.avatar-catalog--child button')).toHaveCount(24);
+    await geometry(page, true);
+    await page.screenshot({ path: `${artifacts}/parent-profile-edit-${locale}-412x915.png`, fullPage: true });
+  });
+}

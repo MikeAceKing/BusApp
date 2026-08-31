@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CircleCheck, CircleX, MapPin, Navigation, Play, ShieldCheck, Square, Wifi, WifiOff } from 'lucide-react';
 import { api } from '../api';
 import type { Locale, TripPassenger, TripRuntimeResponse } from '../types';
-import { AddressText, BusyButton, ErrorBanner, FriendlyBus, InitialAvatar, createT } from './Shared';
+import { AddressText, BusyButton, ErrorBanner, FriendlyBus, createT } from './Shared';
+import { AvatarDisplay } from './AvatarProfiles';
 
 const queueKey = 'bus-app-v2-pending-actions';
 type Queued = { id: string; path: string; body: Record<string, unknown> };
@@ -78,5 +79,5 @@ function TripProgress({ stops, label }: { stops: NonNullable<TripRuntimeResponse
 
 function PassengerAttendance({ passenger, disabled, locale, onStatus }: { passenger: TripPassenger; disabled: boolean; locale: Locale; onStatus: (status: 'BOARDED' | 'MISSED' | 'DROPPED_OFF') => void }) {
   const t = createT(locale);
-  return <article><InitialAvatar name={passenger.display_name_snapshot} avatar={passenger.avatar_key_snapshot} /><span><strong>{passenger.display_name_snapshot}</strong><small>{passenger.status === 'BOARDED' ? t('onBus') : passenger.status === 'MISSED' ? t('missed') : passenger.status === 'DROPPED_OFF' ? t('dropped') : t('expected')}</small></span><div><button className="success" disabled={disabled || passenger.status === 'BOARDED'} onClick={() => onStatus('BOARDED')} aria-label={`${t('onBus')} ${passenger.display_name_snapshot}`}><CircleCheck aria-hidden="true" /></button><button className="danger" disabled={disabled || passenger.status !== 'EXPECTED'} onClick={() => onStatus('MISSED')} aria-label={`${t('missed')} ${passenger.display_name_snapshot}`}><CircleX aria-hidden="true" /></button>{passenger.status === 'BOARDED' && <button className="drop" disabled={disabled} onClick={() => onStatus('DROPPED_OFF')} aria-label={`${t('dropped')} ${passenger.display_name_snapshot}`}><MapPin aria-hidden="true" /></button>}</div></article>;
+  return <article><AvatarDisplay kind="child" avatar={passenger.avatar} name={passenger.display_name_snapshot}/><span><strong>{passenger.display_name_snapshot}</strong><small>{passenger.status === 'BOARDED' ? t('onBus') : passenger.status === 'MISSED' ? t('missed') : passenger.status === 'DROPPED_OFF' ? t('dropped') : t('expected')}</small></span><div><button className="success" disabled={disabled || passenger.status === 'BOARDED'} onClick={() => onStatus('BOARDED')} aria-label={`${t('onBus')} ${passenger.display_name_snapshot}`}><CircleCheck aria-hidden="true" /></button><button className="danger" disabled={disabled || passenger.status !== 'EXPECTED'} onClick={() => onStatus('MISSED')} aria-label={`${t('missed')} ${passenger.display_name_snapshot}`}><CircleX aria-hidden="true" /></button>{passenger.status === 'BOARDED' && <button className="drop" disabled={disabled} onClick={() => onStatus('DROPPED_OFF')} aria-label={`${t('dropped')} ${passenger.display_name_snapshot}`}><MapPin aria-hidden="true" /></button>}</div></article>;
 }
