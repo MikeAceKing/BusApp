@@ -1,7 +1,34 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
 export type Point = { id: string; displayAddress: string; latitude: number; longitude: number; expectedPassengerCount: number };
-export type GeocodeResult = { displayAddress: string; latitude: number; longitude: number; provider: string; reference: string | null };
+export type CountryCode = 'BE' | 'FR';
+export type GeocodeResult = {
+  displayAddress: string; latitude: number; longitude: number; provider: string; reference: string | null;
+  street?: string | null; houseNumber?: string | null; postalCode?: string | null; locality?: string | null; countryCode?: CountryCode | null;
+};
+
+// Belgium and France only for this release. Widening is a deliberate configuration change,
+// never an accident of an unbounded provider default.
+export function supportedCountries(): CountryCode[] {
+  const configured = String(Deno.env.get('GEOCODING_COUNTRIES') || 'BE,FR').split(',').map((value) => value.trim().toUpperCase());
+  const allowed = configured.filter((value): value is CountryCode => value === 'BE' || value === 'FR');
+  return allowed.length ? [...new Set(allowed)] : ['BE', 'FR'];
+}
+
+function normalizedCountry(value: unknown): CountryCode | null {
+  const code = String(value || '').trim().toUpperCase();
+  if (code === 'BE' || code === 'BEL') return 'BE';
+  if (code === 'FR' || code === 'FRA') return 'FR';
+  return null;
+}
+
+// street + house number, then postal code + locality — what a driver actually reads.
+function composeLabel(parts: { street?: string | null; houseNumber?: string | null; postalCode?: string | null; locality?: string | null }, fallback: string): string {
+  const line = [parts.street, parts.houseNumber].filter(Boolean).join(' ').trim();
+  const place = [parts.postalCode, parts.locality].filter(Boolean).join(' ').trim();
+  const composed = [line, place].filter(Boolean).join(', ');
+  return (composed || fallback).slice(0, 300);
+}
 export type RouteInput = { start: Point; end: Point | null; stops: Point[]; roundTrip: boolean };
 export type RouteResult = {
   provider: string;
@@ -13,8 +40,52 @@ export type RouteResult = {
   metadata: Record<string, unknown>;
 };
 
+export type RoutingProviderName = 'local' | 'openrouteservice' | 'osrm' | 'vroom';
+export type RouteAccuracy = 'ROAD' | 'ESTIMATE';
+export type GeometrySource = 'road' | 'waypoints' | 'estimate';
+export type RoutingFallbackReason = 'PROVIDER_TIMEOUT' | 'PROVIDER_UNAVAILABLE' | 'RATE_LIMITED' | 'INVALID_PROVIDER_RESPONSE';
+
+export type RoutingProviderCapabilities = {
+  maxWaypoints: number | null;
+  supportsOptimization: boolean;
+  supportsMatrix: boolean;
+  supportsRoadGeometry: boolean;
+};
+
+// Published openrouteservice limits (openrouteservice.org/restrictions): 50 directions
+// waypoints and 50 optimization jobs per request. Kept configurable so an infrastructure
+// change never requires an application rewrite.
+function envInteger(name: string, fallback: number): number {
+  const parsed = Number(Deno.env.get(name));
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function providerCapabilities(provider: RoutingProviderName): RoutingProviderCapabilities {
+  if (provider === 'openrouteservice') return { maxWaypoints: envInteger('OPENROUTESERVICE_MAX_WAYPOINTS', 50), supportsOptimization: true, supportsMatrix: true, supportsRoadGeometry: true };
+  if (provider === 'osrm') return { maxWaypoints: envInteger('OSRM_MAX_WAYPOINTS', 100), supportsOptimization: true, supportsMatrix: true, supportsRoadGeometry: true };
+  if (provider === 'vroom') return { maxWaypoints: envInteger('VROOM_MAX_WAYPOINTS', 100), supportsOptimization: true, supportsMatrix: false, supportsRoadGeometry: false };
+  return { maxWaypoints: null, supportsOptimization: true, supportsMatrix: false, supportsRoadGeometry: false };
+}
+
+export function configuredProvider(): RoutingProviderName {
+  const value = String(Deno.env.get('ROUTING_PROVIDER') || 'local').trim().toLowerCase();
+  return value === 'openrouteservice' || value === 'osrm' || value === 'vroom' ? value : 'local';
+}
+
 export class RoutingError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
+}
+
+// Provider faults are classified for the audit log. The raw provider error is never
+// surfaced to a user; the UI only learns that an estimate is being shown.
+export function classifyRoutingFailure(error: unknown): RoutingFallbackReason {
+  if (error instanceof DOMException && error.name === 'TimeoutError') return 'PROVIDER_TIMEOUT';
+  if (error instanceof RoutingError) {
+    if (error.status === 429) return 'RATE_LIMITED';
+    if (error.code === 'ROUTING_PROVIDER_RESPONSE_INVALID') return 'INVALID_PROVIDER_RESPONSE';
+    if (error.status === 503 || error.status === 504) return 'PROVIDER_UNAVAILABLE';
+  }
+  return 'PROVIDER_UNAVAILABLE';
 }
 
 async function sha256(value: string): Promise<string> {
@@ -28,7 +99,7 @@ function rowArray(value: unknown): Array<Record<string, unknown>> {
 
 export async function geocodeAddress(db: SupabaseClient, rawQuery: string, locale: 'nl'|'fr'): Promise<GeocodeResult[]> {
   const query = rawQuery.trim().replace(/\s+/g, ' ');
-  if (query.length < 5 || query.length > 200) throw new RoutingError(400, 'ADDRESS_INVALID', 'Controleer het adres.');
+  if (query.length < 3 || query.length > 200) throw new RoutingError(400, 'ADDRESS_INVALID', 'Controleer het adres.');
   const provider = String(Deno.env.get('GEOCODING_PROVIDER') || 'nominatim').trim().toLowerCase();
   const queryHash = await sha256(`${provider}:${locale}:${query.toLocaleLowerCase('nl-BE')}`);
   const cached = await db.from('bus_app_geocode_cache').select('results,expires_at').eq('query_hash', queryHash).gt('expires_at', new Date().toISOString()).maybeSingle();
@@ -36,7 +107,8 @@ export async function geocodeAddress(db: SupabaseClient, rawQuery: string, local
   if (cached.data?.results) return cached.data.results as GeocodeResult[];
 
   let results: GeocodeResult[];
-  if (provider === 'mapbox') results = await geocodeMapbox(query, locale);
+  if (provider === 'openrouteservice') results = await geocodeOpenRouteService(query, locale);
+  else if (provider === 'mapbox') results = await geocodeMapbox(query, locale);
   else if (provider === 'nominatim') {
     const recent = await db.from('bus_app_geocode_cache').select('created_at').eq('provider', 'nominatim').order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (recent.error) throw recent.error;
@@ -59,15 +131,56 @@ async function geocodeNominatim(query: string, locale: 'nl'|'fr'): Promise<Geoco
   url.searchParams.set('q', query);
   url.searchParams.set('format', 'jsonv2');
   url.searchParams.set('addressdetails', '1');
-  url.searchParams.set('countrycodes', 'be');
+  url.searchParams.set('countrycodes', supportedCountries().map((code) => code.toLowerCase()).join(','));
   url.searchParams.set('limit', '5');
   url.searchParams.set('accept-language', locale);
   const response = await fetch(url, { headers: { 'user-agent': `Wexio-BusApp/2.0 (${contact})`, accept: 'application/json' }, signal: AbortSignal.timeout(8_000) });
   if (!response.ok) throw new RoutingError(503, 'GEOCODING_UNAVAILABLE', 'Adreszoeken is tijdelijk niet beschikbaar.');
-  return rowArray(await response.json()).map((row) => ({
-    displayAddress: String(row.display_name || '').slice(0, 300),
-    latitude: Number(row.lat), longitude: Number(row.lon), provider: 'nominatim', reference: String(row.osm_type || '') + ':' + String(row.osm_id || ''),
-  })).filter((item) => item.displayAddress && Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
+  return rowArray(await response.json()).map((row) => {
+    const address = (row.address && typeof row.address === 'object' ? row.address : {}) as Record<string, unknown>;
+    const street = String(address.road || address.pedestrian || address.footway || '') || null;
+    const houseNumber = String(address.house_number || '') || null;
+    const postalCode = String(address.postcode || '') || null;
+    const locality = String(address.city || address.town || address.village || address.municipality || '') || null;
+    return {
+      displayAddress: composeLabel({ street, houseNumber, postalCode, locality }, String(row.display_name || '')),
+      latitude: Number(row.lat), longitude: Number(row.lon), provider: 'nominatim',
+      reference: String(row.osm_type || '') + ':' + String(row.osm_id || ''),
+      street, houseNumber, postalCode, locality, countryCode: normalizedCountry(address.country_code),
+    };
+  }).filter((item) => item.displayAddress && Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
+}
+
+// openrouteservice runs Pelias. GET /geocode/search takes the key as a query parameter;
+// the request is made from the Edge function so the key never reaches a browser.
+async function geocodeOpenRouteService(query: string, locale: 'nl'|'fr'): Promise<GeocodeResult[]> {
+  const key = String(Deno.env.get('OPENROUTESERVICE_API_KEY') || '').trim();
+  if (!key) throw new RoutingError(503, 'GEOCODING_UNAVAILABLE', 'Adreszoeken is tijdelijk niet beschikbaar.');
+  const url = new URL(`${orsBase()}/geocode/search`);
+  url.searchParams.set('api_key', key);
+  url.searchParams.set('text', query);
+  url.searchParams.set('boundary.country', supportedCountries().join(','));
+  url.searchParams.set('lang', locale);
+  url.searchParams.set('size', '5');
+  const response = await fetch(url, { headers: { accept: 'application/geo+json' }, signal: AbortSignal.timeout(8_000) });
+  if (response.status === 429) throw new RoutingError(429, 'GEOCODING_BUSY', 'Even wachten en opnieuw proberen.');
+  if (!response.ok) throw new RoutingError(503, 'GEOCODING_UNAVAILABLE', 'Adreszoeken is tijdelijk niet beschikbaar.');
+  const payload = await response.json().catch(() => null) as { features?: Array<{ geometry?: { coordinates?: unknown }; properties?: Record<string, unknown> }> } | null;
+  if (!payload || !Array.isArray(payload.features)) throw new RoutingError(502, 'GEOCODING_PROVIDER_RESPONSE_INVALID', 'Adreszoeken is tijdelijk niet beschikbaar.');
+  return payload.features.map((feature) => {
+    const properties = feature.properties || {};
+    const coordinates = Array.isArray(feature.geometry?.coordinates) ? feature.geometry.coordinates as unknown[] : [];
+    const street = String(properties.street || '') || null;
+    const houseNumber = String(properties.housenumber || '') || null;
+    const postalCode = String(properties.postalcode || '') || null;
+    const locality = String(properties.locality || properties.localadmin || properties.county || '') || null;
+    return {
+      displayAddress: composeLabel({ street, houseNumber, postalCode, locality }, String(properties.label || '')),
+      longitude: Number(coordinates[0]), latitude: Number(coordinates[1]),
+      provider: 'openrouteservice', reference: String(properties.gid || '') || null,
+      street, houseNumber, postalCode, locality, countryCode: normalizedCountry(properties.country_a),
+    };
+  }).filter((item) => item.displayAddress && Number.isFinite(item.latitude) && Number.isFinite(item.longitude) && item.countryCode !== null);
 }
 
 async function geocodeMapbox(query: string, locale: 'nl'|'fr'): Promise<GeocodeResult[]> {
@@ -155,11 +268,142 @@ async function vroomOptimize(input: RouteInput): Promise<RouteResult> {
   return { provider:'vroom', orderedStopIds:ordered, distanceMeters:Math.round(Number(payload.summary?.distance || 0)), durationSeconds:Math.round(Number(payload.summary?.duration || 0)), arrivalOffsetsSeconds:offsets, geometry:{ type:'LineString', coordinates:[input.start,...orderedPoints,...(input.end ? [input.end] : input.roundTrip ? [input.start] : [])].map((point) => [point.longitude,point.latitude]) }, metadata:{ estimate:false, geometrySource:'waypoints' } };
 }
 
-export async function optimizeRoute(input: RouteInput, mode: 'AUTOMATIC'|'MANUAL', manualOrder?: string[]): Promise<RouteResult> {
-  if (mode === 'MANUAL') return localOptimize(input, manualOrder);
-  const provider = String(Deno.env.get('ROUTING_PROVIDER') || 'local').trim().toLowerCase();
-  if (provider === 'vroom') return vroomOptimize(input);
-  if (provider === 'osrm') return osrmOptimize(input);
-  if (provider === 'local') return localOptimize(input);
-  throw new RoutingError(503, 'ROUTING_PROVIDER_INVALID', 'Routeberekening is tijdelijk niet beschikbaar.');
+// --- openrouteservice / HeiGIT ---------------------------------------------------------
+// Official endpoints (api.openrouteservice.org): POST /optimization for stop ordering
+// (VROOM-backed) and POST /v2/directions/{profile}/geojson for real road geometry.
+// The key is read from the server environment and never leaves the Edge function.
+function orsBase(): string { return String(Deno.env.get('OPENROUTESERVICE_BASE_URL') || 'https://api.openrouteservice.org').replace(/\/$/, ''); }
+function orsProfile(): string { return String(Deno.env.get('OPENROUTESERVICE_PROFILE') || 'driving-car').trim(); }
+
+async function orsRequest(path: string, body: unknown): Promise<Record<string, unknown>> {
+  const key = String(Deno.env.get('OPENROUTESERVICE_API_KEY') || '').trim();
+  if (!key) throw new RoutingError(503, 'ROUTING_UNAVAILABLE', 'Routeberekening is tijdelijk niet beschikbaar.');
+  const response = await fetch(`${orsBase()}${path}`, {
+    method: 'POST',
+    headers: { authorization: key, 'content-type': 'application/json', accept: 'application/json, application/geo+json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (response.status === 429) throw new RoutingError(429, 'ROUTING_RATE_LIMITED', 'Routeberekening is tijdelijk niet beschikbaar.');
+  if (!response.ok) throw new RoutingError(503, 'ROUTING_UNAVAILABLE', 'Routeberekening is tijdelijk niet beschikbaar.');
+  const payload = await response.json().catch(() => null);
+  if (!payload || typeof payload !== 'object') throw new RoutingError(502, 'ROUTING_PROVIDER_RESPONSE_INVALID', 'Routeberekening is tijdelijk niet beschikbaar.');
+  return payload as Record<string, unknown>;
+}
+
+// Only a LineString with at least two positions may ever be treated as road geometry.
+function readLineString(value: unknown): { type: 'LineString'; coordinates: Array<[number, number]> } | null {
+  const candidate = value as { type?: unknown; coordinates?: unknown } | null;
+  if (!candidate || candidate.type !== 'LineString' || !Array.isArray(candidate.coordinates)) return null;
+  const coordinates: Array<[number, number]> = [];
+  for (const entry of candidate.coordinates) {
+    if (!Array.isArray(entry) || entry.length < 2) return null;
+    const longitude = Number(entry[0]); const latitude = Number(entry[1]);
+    if (!Number.isFinite(longitude) || !Number.isFinite(latitude) || Math.abs(longitude) > 180 || Math.abs(latitude) > 90) return null;
+    coordinates.push([longitude, latitude]);
+  }
+  return coordinates.length >= 2 ? { type: 'LineString', coordinates } : null;
+}
+
+async function orsOrderStops(input: RouteInput): Promise<string[]> {
+  if (!input.stops.length) return [];
+  if (input.stops.length === 1) return [input.stops[0].id];
+  // The provider receives coordinates and an opaque index only. No passenger, parent or
+  // Bus Space identifier is ever sent to an external routing service.
+  const body = {
+    vehicles: [{
+      id: 1,
+      profile: orsProfile(),
+      start: [input.start.longitude, input.start.latitude],
+      ...(input.end ? { end: [input.end.longitude, input.end.latitude] } : input.roundTrip ? { end: [input.start.longitude, input.start.latitude] } : {}),
+    }],
+    jobs: input.stops.map((stop, index) => ({ id: index + 1, location: [stop.longitude, stop.latitude] })),
+  };
+  const payload = await orsRequest('/optimization', body);
+  const routes = Array.isArray(payload.routes) ? payload.routes as Array<{ steps?: Array<{ type?: string; job?: number; id?: number }> }> : [];
+  const steps = routes[0]?.steps || [];
+  const ordered = steps
+    .filter((step) => step.type === 'job')
+    .map((step) => Number(step.job ?? step.id))
+    .filter((index) => Number.isInteger(index) && index >= 1 && index <= input.stops.length)
+    .map((index) => input.stops[index - 1].id);
+  if (new Set(ordered).size !== input.stops.length) throw new RoutingError(502, 'ROUTING_PROVIDER_RESPONSE_INVALID', 'Routeberekening is tijdelijk niet beschikbaar.');
+  return ordered;
+}
+
+async function openRouteServiceOptimize(input: RouteInput): Promise<RouteResult> {
+  const capabilities = providerCapabilities('openrouteservice');
+  const waypointCount = input.stops.length + 1 + (input.end || input.roundTrip ? 1 : 0);
+  // Detected before the request. The route is never silently truncated to fit.
+  if (capabilities.maxWaypoints !== null && waypointCount > capabilities.maxWaypoints) {
+    throw new RoutingError(422, 'ROUTE_TOO_MANY_STOPS', 'Deze rit heeft te veel haltes voor de huidige routeprovider.');
+  }
+  const orderedIds = await orsOrderStops(input);
+  const byId = new Map(input.stops.map((stop) => [stop.id, stop]));
+  const orderedPoints = orderedIds.map((id) => byId.get(id)).filter((stop): stop is Point => Boolean(stop));
+  const path = [input.start, ...orderedPoints, ...(input.end ? [input.end] : input.roundTrip ? [input.start] : [])];
+  if (path.length < 2) throw new RoutingError(422, 'ROUTE_NOT_FOUND', 'Geen geldige route gevonden.');
+
+  const directions = await orsRequest(`/v2/directions/${encodeURIComponent(orsProfile())}/geojson`, {
+    coordinates: path.map((point) => [point.longitude, point.latitude]),
+    instructions: false,
+  });
+  const features = Array.isArray(directions.features) ? directions.features as Array<{ geometry?: unknown; properties?: { summary?: { distance?: unknown; duration?: unknown }; segments?: Array<{ distance?: unknown; duration?: unknown }> } }> : [];
+  const feature = features[0];
+  const geometry = readLineString(feature?.geometry);
+  const summary = feature?.properties?.summary;
+  const distanceMeters = Math.round(Number(summary?.distance));
+  const durationSeconds = Math.round(Number(summary?.duration));
+  if (!geometry || !Number.isFinite(distanceMeters) || !Number.isFinite(durationSeconds) || distanceMeters <= 0) {
+    throw new RoutingError(502, 'ROUTING_PROVIDER_RESPONSE_INVALID', 'Routeberekening is tijdelijk niet beschikbaar.');
+  }
+  // Arrival offsets come from real per-leg road durations, not a proportional guess.
+  const segments = feature?.properties?.segments || [];
+  const offsets: Record<string, number> = {};
+  let cumulative = 0;
+  orderedIds.forEach((id, index) => {
+    cumulative += Math.round(Number(segments[index]?.duration) || 0);
+    offsets[id] = cumulative;
+  });
+  return {
+    provider: 'openrouteservice',
+    orderedStopIds: orderedIds,
+    distanceMeters,
+    durationSeconds,
+    arrivalOffsetsSeconds: offsets,
+    geometry,
+    metadata: { estimate: false, accuracy: 'ROAD', geometrySource: 'road', profile: orsProfile(), calculatedAt: new Date().toISOString() },
+  };
+}
+
+export type RouteOutcome = RouteResult & { accuracy: RouteAccuracy; geometrySource: GeometrySource; fallbackReason?: RoutingFallbackReason };
+
+function asOutcome(result: RouteResult): RouteOutcome {
+  const source = String((result.metadata as Record<string, unknown>).geometrySource || 'estimate');
+  const geometrySource: GeometrySource = source === 'road' ? 'road' : source === 'waypoints' ? 'waypoints' : 'estimate';
+  return { ...result, geometrySource, accuracy: geometrySource === 'road' ? 'ROAD' : 'ESTIMATE' };
+}
+
+export async function optimizeRoute(input: RouteInput, mode: 'AUTOMATIC'|'MANUAL', manualOrder?: string[]): Promise<RouteOutcome> {
+  if (mode === 'MANUAL') return asOutcome(localOptimize(input, manualOrder));
+  const provider = configuredProvider();
+  if (provider === 'local') return asOutcome(localOptimize(input));
+  try {
+    if (provider === 'openrouteservice') return asOutcome(await openRouteServiceOptimize(input));
+    if (provider === 'osrm') return asOutcome(await osrmOptimize(input));
+    return asOutcome(await vroomOptimize(input));
+  } catch (error) {
+    // A route the provider genuinely cannot serve is a real answer, not a fault to mask.
+    if (error instanceof RoutingError && (error.code === 'ROUTE_TOO_MANY_STOPS' || error.code === 'ROUTING_OPEN_TRIP_UNSUPPORTED')) throw error;
+    const fallbackReason = classifyRoutingFailure(error);
+    console.error('[bus-app] routing provider failed', { provider, fallbackReason });
+    const estimated = asOutcome(localOptimize(input));
+    return {
+      ...estimated,
+      accuracy: 'ESTIMATE',
+      geometrySource: 'estimate',
+      fallbackReason,
+      metadata: { ...estimated.metadata, estimate: true, accuracy: 'ESTIMATE', geometrySource: 'estimate', attemptedProvider: provider, fallbackReason },
+    };
+  }
 }
