@@ -1,0 +1,18 @@
+{
+  "name": "busapp-v2",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["app"],
+  "scripts": {
+    "dev": "npm run dev --workspace app",
+    "build": "npm run build --workspace app",
+    "test:integrity": "npm run test:integrity --workspace app",
+    "test:contracts": "node --test tests/server/bus-app-v2-contract.test.mjs tests/ui/bus-app-v2-product-integrity.test.mjs",
+    "test:responsive": "npm run test:responsive --workspace app",
+    "test": "npm run test:integrity && npm run test:contracts && npm run test:responsive"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,4 @@
+project_id = "busapp"
+
+[functions.bus-app]
+verify_jwt = false
