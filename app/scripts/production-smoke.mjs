@@ -151,9 +151,20 @@ try {
   assert(parentHome.trip?.location && Object.keys(parentHome.trip.location).every((key) => ['latitude', 'longitude', 'capturedAt'].includes(key)), 'Parent location payload is not filtered.');
   assert(!('stops' in (parentHome.trip || {})) && !('members' in parentHome), 'Parent received private route/member data.');
 
+  const parentBus = await request(parentToken, `/parent/bus-profile?grantId=${activated.grantId}`);
+  assert(parentBus.bus?.displayName, 'Parent did not receive the assigned bus identity.');
+  assert(parentBus.bus.avatar && typeof parentBus.bus.avatar.source === 'string', 'Parent bus avatar reference is missing.');
+  assert(parentBus.driver?.role === 'DRIVER' && parentBus.driver.displayName, 'Parent did not receive the assigned driver.');
+  assert(Object.keys(parentBus.driver).every((key) => ['displayName', 'role', 'avatar'].includes(key)), 'Parent staff payload exposes more than name, role and avatar.');
+  assert(!('id' in parentBus.bus) && !('busSpaceId' in parentBus) && !('members' in parentBus), 'Parent bus payload leaks internal identifiers.');
+  const parentBusText = JSON.stringify(parentBus);
+  assert(!parentBusText.includes('@'), 'Parent bus payload contains an address-like contact value.');
+  assert(!parentBusText.includes(driverId), 'Parent bus payload leaks a staff user id.');
+
   home = await request(driverToken, `/spaces/${spaceId}/home`);
   assert(home.activeTrip?.id === started.tripId, 'Active trip is not visible to staff.');
-  console.log(JSON.stringify({ ok: true, profileLanguage: true,privateProfilePhoto:true,space: true, stop: true, passenger: true,syncedPassengerPhoto:true, route: true, trip: true, anonymousParent: true, filteredParentPayload: true }));
+  assert(home.permissions?.manageBusProfile === true, 'Bus profile permission was not resolved for the owner.');
+  console.log(JSON.stringify({ ok: true, profileLanguage: true,privateProfilePhoto:true,space: true, stop: true, passenger: true,syncedPassengerPhoto:true, route: true, trip: true, anonymousParent: true, filteredParentPayload: true, parentBusProfile: true, busProfilePermission: true }));
 } finally {
   if (spaceId) await admin.from('bus_app_spaces').delete().eq('id', spaceId);
   if (parentId) await admin.auth.admin.deleteUser(parentId);
