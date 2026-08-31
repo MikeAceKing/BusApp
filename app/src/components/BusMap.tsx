@@ -29,7 +29,7 @@ function busElement(bus: MapBus): HTMLElement {
   element.setAttribute('role', 'img');
   element.setAttribute('aria-label', bus.name);
   // The canonical bus identity is reused; there is no separate map iconography and no emoji.
-  const source = bus.avatar?.photoUrl || (bus.avatar?.builtInAvatarId ? `/avatars/${bus.avatar.builtInAvatarId}.svg` : '/brand/busapp-mark.svg');
+  const source = bus.avatar?.photoUrl || (bus.avatar?.builtInAvatarId ? `/avatars/${bus.avatar.builtInAvatarId}.svg` : '/brand/busapp-mark.png');
   const image = document.createElement('img');
   image.src = source;
   image.alt = '';

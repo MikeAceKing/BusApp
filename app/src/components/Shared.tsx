@@ -13,7 +13,7 @@ export const createT = (locale: Locale): T => translators[locale];
 
 export function Brand({ compact = false }: { compact?: boolean }) {
   return <div className={`brand ${compact ? 'brand--compact' : ''}`}>
-    <img className="brand__mark" src="/brand/busapp-mark.svg" alt="" aria-hidden="true" />
+    <img className="brand__mark" src="/brand/busapp-mark.png" alt="" aria-hidden="true" />
     <span><strong>BusApp</strong></span>
   </div>;
 }
