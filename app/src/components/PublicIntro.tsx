@@ -1,6 +1,6 @@
 import { ArrowRight, BusFront, Check, FileText, Globe, KeyRound, ShieldCheck, Smartphone, Sparkles, UsersRound } from 'lucide-react';
 import type { EntryMode, Locale } from '../types';
-import { Brand, FriendlyBus, LanguageSwitch, createT } from './Shared';
+import { Brand, LanguageSwitch, createT } from './Shared';
 import { guideDocument, guideShots, publicCopy } from '../public-content';
 import { usePublicPath, type PublicPath } from '../public-routes';
 
@@ -45,9 +45,24 @@ export function PublicIntro({ locale, onLocale, onSelect }: { locale: Locale; on
 
     {path === '/' && <>
       <section className="public-hero">
-        <div className="public-hero__art" aria-hidden="true">
-          <i className="public-hero__sun" /><i className="public-hero__cloud" />
-          <FriendlyBus size={168} />
+        <div className="public-hero__art">
+          <picture>
+            <source
+              media="(min-width: 700px)"
+              type="image/webp"
+              srcSet="/media/hero/herobus-wide-960.webp 960w, /media/hero/herobus-wide-1440.webp 1440w, /media/hero/herobus-wide-1920.webp 1920w"
+              sizes="min(100vw, 1140px)"
+            />
+            <img
+              src="/media/hero/herobus-mobile-720.webp"
+              srcSet="/media/hero/herobus-mobile-480.webp 480w, /media/hero/herobus-mobile-720.webp 720w, /media/hero/herobus-mobile-960.webp 960w"
+              sizes="100vw"
+              width={720}
+              height={480}
+              alt=""
+              decoding="async"
+            />
+          </picture>
         </div>
         <h1>{say(publicCopy.heroTitle)}</h1>
         <p>{say(publicCopy.heroBody)}</p>

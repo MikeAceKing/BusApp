@@ -580,3 +580,34 @@ test('choosing an access route from a sub-page enters the app cleanly', async ({
   // The URL is reset so a reload does not drop the app runtime on a marketing path.
   expect(new URL(page.url()).pathname).toBe('/');
 });
+
+test('the hero illustration is art-directed for phone and desktop', async ({ page }) => {
+  await freshVisitor(page, 'nl');
+
+  // A phone gets the taller crop centred on the bus, not a sliver of the wide banner.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const hero = page.locator('.public-hero__art img');
+  await expect(hero).toBeVisible();
+  const phone = await hero.evaluate((image: HTMLImageElement) => ({ src: image.currentSrc, natural: image.naturalWidth, ratio: image.clientWidth / image.clientHeight }));
+  expect(phone.src, 'a phone must load the mobile crop').toContain('herobus-mobile');
+  expect(phone.natural, 'the hero must actually decode').toBeGreaterThan(0);
+  expect(phone.ratio).toBeGreaterThan(1.3);
+  expect(phone.ratio).toBeLessThan(1.7);
+  await geometry(page);
+
+  // From tablet up the wide banner is used, with its own aspect ratio.
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.goto('/');
+  const wide = await hero.evaluate((image: HTMLImageElement) => ({ src: image.currentSrc, ratio: image.clientWidth / image.clientHeight }));
+  expect(wide.src, 'a wide viewport must load the wide banner').toContain('herobus-wide');
+  expect(wide.ratio).toBeGreaterThan(2);
+  await geometry(page);
+
+  // The hero must not overflow at the narrowest supported width.
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto('/');
+  await expect(hero).toBeVisible();
+  await geometry(page);
+  await page.screenshot({ path: `${artifacts}/public-hero-320.png`, fullPage: false });
+});
