@@ -25,3 +25,36 @@ artifacts/
 
 # Build artifact extracted from the pinned @imagemagick/magick-wasm dependency.
 supabase/functions/bus-app-media/magick.wasm
+
+# Repository hygiene: deployment state and credentials stay on the server.
+.env
+.env.*
+**/.env
+**/.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+node_modules/
+.next/
+.next-*/
+.next.*/
+.build/
+dist/
+dist.*/
+out/
+coverage/
+playwright-report/
+blob-report/
+test-results/
+*.tsbuildinfo
+*.log
+.cache/
+.tmp/
+tmp/
+.supabase/
+supabase/.temp/
+supabase/.branches/
+.DS_Store
