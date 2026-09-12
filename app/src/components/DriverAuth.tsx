@@ -1,3 +1,5 @@
+import { authCaptchaOptions } from '../lib/auth/captcha';
+import { validatePasswordPolicy, PASSWORD_POLICY_COPY, PASSWORD_POLICY_MIN_LENGTH } from '../lib/auth/password-policy';
 import { useState, type FormEvent } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { supabase } from '../supabase';
@@ -15,19 +17,22 @@ export function DriverAuth({ locale, onLocale, onBack }: { locale: Locale; onLoc
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (register && !validatePasswordPolicy(password).valid) { setMessage(PASSWORD_POLICY_COPY[locale]); return; }
     setBusy(true);
     setMessage('');
+    try {
     const current = await supabase.auth.getSession();
     if (current.data.session?.user.is_anonymous) await supabase.auth.signOut();
     if (register) {
-      const result = await supabase.auth.signUp({ email, password, options: { data: { display_name: name, source: 'busapp' } } });
+      const result = await supabase.auth.signUp({ email, password, options: { ...await authCaptchaOptions(), data: { display_name: name, source: 'busapp' } } });
       if (result.error) setMessage(result.error.message);
       else if (!result.data.session) setMessage(t('confirmEmail'));
     } else {
-      const result = await supabase.auth.signInWithPassword({ email, password });
+      const result = await supabase.auth.signInWithPassword({ email, password, options: await authCaptchaOptions() });
       if (result.error) setMessage(result.error.message);
     }
-    setBusy(false);
+    } catch { setMessage(locale === 'fr' ? 'Vérification indisponible. Réessayez.' : locale === 'nl' ? 'Verificatie niet beschikbaar. Probeer opnieuw.' : 'Verification unavailable. Please retry.'); }
+    finally { setBusy(false); }
   }
 
   return <main className="auth-shell">
@@ -40,7 +45,7 @@ export function DriverAuth({ locale, onLocale, onBack }: { locale: Locale; onLoc
       <form onSubmit={submit}>
         {register && <label>{t('displayName')}<input required minLength={1} maxLength={50} autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} /></label>}
         <label>{t('email')}<input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-        <label>{t('password')}<input required minLength={8} type="password" autoComplete={register ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+        <label>{t('password')}<input required minLength={register ? PASSWORD_POLICY_MIN_LENGTH : undefined} type="password" autoComplete={register ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
         <BusyButton busy={busy} className="primary-button" type="submit">{register ? t('register') : t('login')}</BusyButton>
       </form>
       {message && <p className="form-message" role="status">{message}</p>}
